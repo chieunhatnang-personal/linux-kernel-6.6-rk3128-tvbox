@@ -93,6 +93,7 @@ dtb-$(CONFIG_ARCH_ROCKCHIP) += \
 	rk3128-evb-ddr3-v10-linux.dtb \
 	rk3128-evb-ddr3-v10-linux-spi-nand.dtb \
 	rk3128-evb.dtb \
+	rk3128-linux.dtb \
 	rk3188-bqedison2qc.dtb \
 	rk3188-px3-evb.dtb \
 	rk3188-radxarock.dtb \
@@ -155,3 +156,5 @@ dtb-$(CONFIG_ARCH_ROCKCHIP) += \
 	rk3528-evb3-lp4x-v10.dtb \
 	rk3528-evb4-ddr4-v10.dtb \
 	rk3562-evb2-ddr4-v10.dtb
+
+DTC_FLAGS_rk3128-linux := -@

@@ -629,6 +629,10 @@ static int rockchip_rk3036_pll_set_params(struct rockchip_clk_pll *pll,
 		}
 	}
 
+	/* Restore the RK3036-class power cycle before reprogramming. */
+	writel(HIWORD_UPDATE(1, RK3036_PLLCON1_PWRDOWN, 13),
+	       pll->reg_base + RK3036_PLLCON(1));
+
 	/* update pll values */
 	writel_relaxed(HIWORD_UPDATE(rate->fbdiv, RK3036_PLLCON0_FBDIV_MASK,
 					  RK3036_PLLCON0_FBDIV_SHIFT) |
@@ -652,6 +656,9 @@ static int rockchip_rk3036_pll_set_params(struct rockchip_clk_pll *pll,
 
 	if (IS_ENABLED(CONFIG_ROCKCHIP_CLK_BOOST))
 		rockchip_boost_disable_low(pll);
+
+	writel(HIWORD_UPDATE(0, RK3036_PLLCON1_PWRDOWN, 13),
+	       pll->reg_base + RK3036_PLLCON(1));
 
 	/* wait for the pll to lock */
 	ret = rockchip_rk3036_pll_wait_lock(pll);
