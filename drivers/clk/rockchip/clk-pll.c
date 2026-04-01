@@ -506,20 +506,30 @@ static int rockchip_pll_wait_lock(struct rockchip_clk_pll *pll)
 #define RK3036_PLLCON1_PLLPDSEL			BIT(15)
 #define RK3036_PLLCON2_FRAC_MASK		0xffffff
 #define RK3036_PLLCON2_FRAC_SHIFT		0
+#define RK3036_PLL_LOCK_TIMEOUT_US		50000
 
 static int rockchip_rk3036_pll_wait_lock(struct rockchip_clk_pll *pll)
 {
+	struct regmap *grf = pll->ctx->grf;
+	unsigned int val;
 	u32 pllcon;
 	int ret;
 
 	/*
-	 * Lock time typical 250, max 500 input clock cycles @24MHz
-	 * So define a very safe maximum of 1000us, meaning 24000 cycles.
+	 * Older RK3128 vendor kernels polled the GRF lock bit for RK3036-class
+	 * PLLs instead of relying on PLLCON1. Some boards appear to only report
+	 * a stable lock through the GRF path during runtime DVFS transitions.
 	 */
-	ret = readl_relaxed_poll_timeout(pll->reg_base + RK3036_PLLCON(1),
-					 pllcon,
-					 pllcon & RK3036_PLLCON1_LOCK_STATUS,
-					 0, 1000);
+	if (grf) {
+		ret = regmap_read_poll_timeout(grf, pll->lock_offset, val,
+					       val & BIT(pll->lock_shift), 0,
+					       RK3036_PLL_LOCK_TIMEOUT_US);
+	} else {
+		ret = readl_relaxed_poll_timeout(pll->reg_base + RK3036_PLLCON(1),
+						 pllcon,
+						 pllcon & RK3036_PLLCON1_LOCK_STATUS,
+						 0, RK3036_PLL_LOCK_TIMEOUT_US);
+	}
 	if (ret)
 		pr_err("%s: timeout waiting for pll to lock\n", __func__);
 

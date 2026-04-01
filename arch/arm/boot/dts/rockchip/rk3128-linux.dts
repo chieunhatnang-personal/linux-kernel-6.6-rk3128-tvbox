@@ -133,7 +133,7 @@
 		rockchip,pwm_voltage = <1200000>;
 		pwms = <&pwm2 0 25000 1>;
 		regulator-name = "vdd_log";
-		regulator-min-microvolt = <1000000>;
+		regulator-min-microvolt = <1050000>;
 		regulator-max-microvolt = <1300000>;
 		regulator-ramp-delay = <12500>;
 		regulator-settling-time-up-us = <250>;
@@ -177,15 +177,19 @@
 
 &cpu0 {
 	cpu-supply = <&cpu_vdd_arm>;
+	clock-frequency = <600000000>;
 };
 
 &cpu1 {
+	clock-frequency = <600000000>;
 };
 
 &cpu2 {
+	clock-frequency = <600000000>;
 };
 
 &cpu3 {
+	clock-frequency = <600000000>;
 };
 
 /*
@@ -199,8 +203,6 @@
 	/delete-property/ rockchip,leakage-voltage-sel;
 
 	/delete-node/ opp-696000000;
-	/delete-node/ opp-1008000000;
-	/delete-node/ opp-1200000000;
 
 	opp-216000000 {
 		opp-microvolt = <1050000 1050000 1360000>;
@@ -243,6 +245,7 @@
 		opp-microvolt-L1 = <1350000 1350000 1360000>;
 		opp-microvolt-L2 = <1350000 1350000 1360000>;
 	};
+
 };
 
 /*
@@ -257,26 +260,11 @@
 };
 
 &cif_new {
-	status = "okay";
-
-	ports {
-		port@0 {
-			cif_in_fcam: endpoint@0 {
-				remote-endpoint =  <&gc0312_out>;
-				vsync-active = <1>;
-				hsync-active = <1>;
-			};
-
-			cif_in_bcam: endpoint@1 {
-				remote-endpoint = <&gc2145_out>;
-				vsync-active = <0>;
-				hsync-active = <1>;
-			};
-		};
-	};
+	status = "disabled";
 };
 
 &display_subsystem {
+	/delete-property/ logo-memory-region;
 	status = "okay";
 
 	route {
@@ -293,6 +281,7 @@
 
 &dmc {
 	center-supply = <&logic_vdd_log>;
+	status = "disabled";
 };
 
 &emmc {
@@ -302,7 +291,7 @@
 	disable-wp;
 	non-removable;
 	num-slots = <1>;
-	status = "okay";
+	status = "disabled";
 };
 
 &watchdog {
@@ -313,24 +302,37 @@
 	assigned-clocks = <&cru SCLK_MAC_SRC>;
 	assigned-clock-rates = <50000000>;
 	clock_in_out = "output";
+	max-speed = <100>;
 	pinctrl-names = "default";
 	pinctrl-0 = <&rmii_pins>;
+	phy-handle = <&gmac_phy>;
 	phy-supply = <&vcc_phy>;
 	phy-mode = "rmii";
+	snps,phy-addr = <1>;
 	snps,reset-active-low;
 	snps,reset-delays-us = <0 10000 50000>;
 	snps,reset-gpio = <&gpio2 RK_PD0 GPIO_ACTIVE_LOW>;
+	tx_delay = <0>;
+	rx_delay = <0>;
 	status = "okay";
+};
+
+&mdio {
+	gmac_phy: phy@1 {
+		compatible = "ethernet-phy-ieee802.3-c22";
+		reg = <1>;
+	};
 };
 
 
 &gpu {
-	status = "okay";
+	status = "disabled";
 	mali-supply = <&logic_vdd_log>;
 };
 
 &hdmi {
 	#sound-dai-cells = <0>;
+	rockchip,format = "i2s";
 	status = "okay";
 };
 
@@ -360,11 +362,6 @@
 
 		pwdn-gpios = <&gpio3 RK_PB3 GPIO_ACTIVE_HIGH>;
 		pwndpmu-supply = <&ldo4>;
-		port {
-			gc0312_out: endpoint {
-				remote-endpoint = <&cif_in_fcam>;
-			};
-		};
 	};
 
 	gc2145@3c {
@@ -378,12 +375,6 @@
 		avdd-supply = <&vcc28_cif>;
 		dovdd-supply = <&vcc18_cif>;
 		dvdd-supply = <&vcc18_cif>;
-
-		port {
-			gc2145_out: endpoint {
-				remote-endpoint = <&cif_in_bcam>;
-			};
-		};
 	};
 
 	ts@40 {
@@ -602,11 +593,11 @@
 };
 
 &iep {
-	status = "okay";
+	status = "disabled";
 };
 
 &iep_mmu {
-	status = "okay";
+	status = "disabled";
 };
 
 &nandc {
@@ -649,7 +640,7 @@
 };
 
 &rga {
-	status = "okay";
+	status = "disabled";
 };
 
 &saradc {

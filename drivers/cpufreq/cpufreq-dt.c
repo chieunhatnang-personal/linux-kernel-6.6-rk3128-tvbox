@@ -23,7 +23,7 @@
 #include <linux/thermal.h>
 
 #include "cpufreq-dt.h"
-#ifdef CONFIG_ARCH_ROCKCHIP
+#if IS_ENABLED(CONFIG_ARM_ROCKCHIP_CPUFREQ)
 #include "rockchip-cpufreq.h"
 #endif
 
@@ -57,16 +57,30 @@ static struct private_data *cpufreq_dt_find_data(int cpu)
 	return NULL;
 }
 
+#if IS_ENABLED(CONFIG_ARM_ROCKCHIP_CPUFREQ)
+static bool rockchip_cpufreq_use_direct_opp_path(void)
+{
+	/*
+	 * Older 32-bit Rockchip SoCs were working on the plain OPP path in
+	 * older vendor kernels. Keep the Rockchip helper available for newer
+	 * SoCs, but let these legacy parts use direct dev_pm_opp_set_rate().
+	 */
+	return of_machine_is_compatible("rockchip,rk3036") ||
+	       of_machine_is_compatible("rockchip,rk3126") ||
+	       of_machine_is_compatible("rockchip,rk3128");
+}
+#endif
+
 static int set_target(struct cpufreq_policy *policy, unsigned int index)
 {
 	struct private_data *priv = policy->driver_data;
 	unsigned long freq = policy->freq_table[index].frequency;
 
-#ifdef CONFIG_ARCH_ROCKCHIP
-	return rockchip_cpufreq_opp_set_rate(priv->cpu_dev, freq * 1000);
-#else
-	return dev_pm_opp_set_rate(priv->cpu_dev, freq * 1000);
+#if IS_ENABLED(CONFIG_ARM_ROCKCHIP_CPUFREQ)
+	if (!rockchip_cpufreq_use_direct_opp_path())
+		return rockchip_cpufreq_opp_set_rate(priv->cpu_dev, freq * 1000);
 #endif
+	return dev_pm_opp_set_rate(priv->cpu_dev, freq * 1000);
 }
 
 /*
@@ -160,8 +174,9 @@ out_clk_put:
 
 static int cpufreq_online(struct cpufreq_policy *policy)
 {
-#ifdef CONFIG_ARCH_ROCKCHIP
-	return rockchip_cpufreq_online(policy->cpu);
+#if IS_ENABLED(CONFIG_ARM_ROCKCHIP_CPUFREQ)
+	if (!rockchip_cpufreq_use_direct_opp_path())
+		return rockchip_cpufreq_online(policy->cpu);
 #endif
 	/* We did light-weight tear down earlier, nothing to do here */
 	return 0;
@@ -169,8 +184,9 @@ static int cpufreq_online(struct cpufreq_policy *policy)
 
 static int cpufreq_offline(struct cpufreq_policy *policy)
 {
-#ifdef CONFIG_ARCH_ROCKCHIP
-	return rockchip_cpufreq_offline(policy->cpu);
+#if IS_ENABLED(CONFIG_ARM_ROCKCHIP_CPUFREQ)
+	if (!rockchip_cpufreq_use_direct_opp_path())
+		return rockchip_cpufreq_offline(policy->cpu);
 #endif
 	/*
 	 * Preserve policy->driver_data and don't free resources on light-weight
@@ -293,8 +309,9 @@ static int dt_cpufreq_early_init(struct device *dev, int cpu)
 				__func__, ret);
 	}
 
-#ifdef CONFIG_ARCH_ROCKCHIP
-	rockchip_cpufreq_adjust_table(cpu_dev);
+#if IS_ENABLED(CONFIG_ARM_ROCKCHIP_CPUFREQ)
+	if (!rockchip_cpufreq_use_direct_opp_path())
+		rockchip_cpufreq_adjust_table(cpu_dev);
 #endif
 
 	ret = dev_pm_opp_init_cpufreq_table(cpu_dev, &priv->freq_table);
