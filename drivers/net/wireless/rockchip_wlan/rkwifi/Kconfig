@@ -1,4 +1,11 @@
 # SPDX-License-Identifier: GPL-2.0
+menu "Rockchip Vendor WiFi Drivers"
+
+menuconfig BCMDHD
+	bool "Broadcom Wireless Device Driver Support"
+	default y
+
+if BCMDHD
 config AP6XXX
 	tristate "ap6xxx wireless cards support"
 	depends on RFKILL_RK
@@ -54,3 +61,11 @@ config BCMDHD_STATIC_IF
 	bool "Enable wlan1 support"
 	help
 	  default to add wlan1 interface
+endif
+
+source "drivers/net/wireless/rockchip_wlan/rkwifi/esp8089/Kconfig"
+source "drivers/net/wireless/rockchip_wlan/rkwifi/ssv6xxx/Kconfig"
+source "drivers/net/wireless/rockchip_wlan/rkwifi/rtl8189es/Kconfig"
+source "drivers/net/wireless/rockchip_wlan/rkwifi/rtl8189fs/Kconfig"
+
+endmenu
