@@ -21,7 +21,8 @@ ifeq ($(GCC_VER_49),1)
 EXTRA_CFLAGS += -Wno-date-time	# Fix compile error && warning on gcc 4.9 and later
 endif
 
-EXTRA_CFLAGS += -I$(src)/include
+EXTRA_CFLAGS += -I$(srctree)/$(src)
+EXTRA_CFLAGS += -I$(srctree)/$(src)/include
 
 EXTRA_LDFLAGS += --strip-debug
 
@@ -2282,6 +2283,7 @@ ifeq ($(CONFIG_RTL8723B), y)
 $(MODULE_NAME)-$(CONFIG_MP_INCLUDED)+= core/rtw_bt_mp.o
 endif
 
+ccflags-y += $(EXTRA_CFLAGS)
 obj-$(CONFIG_RTL8189FS) := $(MODULE_NAME).o
 
 else

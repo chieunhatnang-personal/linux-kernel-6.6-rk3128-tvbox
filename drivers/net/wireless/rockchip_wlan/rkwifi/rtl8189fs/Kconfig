@@ -2,5 +2,5 @@
 config RTL8189FS
 	tristate "Realtek 8189F SDIO WiFi"
 	depends on MMC
-	---help---
-	  Help message of RTL8189FS
+	help
+	  Enable the Realtek RTL8189FS SDIO WLAN driver.

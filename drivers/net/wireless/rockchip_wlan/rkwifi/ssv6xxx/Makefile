@@ -1,6 +1,7 @@
 KMODULE_NAME=ssv6051
 
 KBUILD_TOP := drivers/net/wireless/rockchip_wlan/rkwifi/ssv6xxx
+SSV_SRCDIR := $(srctree)/$(if $(src),$(src),$(KBUILD_TOP))
 
 KERNEL_TOP := $(PWD)
 FIRMWARE_PATH := $(KERNEL_TOP)/../vendor/rockchip/common/wifi/firmware
@@ -15,17 +16,16 @@ CFGDIR = $(PWD)/../../../../config
 
 endif
 
-include $(KBUILD_TOP)/ssv6051.cfg
-include $(KBUILD_TOP)/platform-config.mak
+include $(srctree)/$(KBUILD_TOP)/ssv6051.cfg
+include $(srctree)/$(KBUILD_TOP)/platform-config.mak
 
 # The multi-thread crypto path creates the ssv6xxx_encry kthreads and has been
 # observed to wedge on low-end Rockchip boxes under sustained traffic. Build
 # the simpler synchronous crypto path instead.
 ccflags-y := $(filter-out -DMULTI_THREAD_ENCRYPT -DKTHREAD_BIND,$(ccflags-y))
-
-EXTRA_CFLAGS := -I$(KBUILD_TOP) -I$(KBUILD_TOP)/include
-DEF_PARSER_H = $(KBUILD_TOP)/include/ssv_conf_parser.h
-$(shell env ccflags="$(ccflags-y)" $(KBUILD_TOP)/parser-conf.sh $(DEF_PARSER_H))
+ccflags-y += -I$(SSV_SRCDIR) -I$(SSV_SRCDIR)/include
+DEF_PARSER_H = $(SSV_SRCDIR)/include/ssv_conf_parser.h
+$(shell env ccflags="$(ccflags-y)" $(SSV_SRCDIR)/parser-conf.sh $(DEF_PARSER_H))
 
 KERN_SRCS := ssvdevice/ssvdevice.c
 KERN_SRCS += ssvdevice/ssv_cmd.c
@@ -74,4 +74,3 @@ obj-$(CONFIG_SSV6051) += $(KMODULE_NAME).o
 #$(shell cp  $(KBUILD_TOP)/firmware/ssv6051-wifi.cfg $(FIRMWARE_PATH)/)
 #$(shell cp  $(KBUILD_TOP)/firmware/ssv6051-sw.bin $(FIRMWARE_PATH)/)
 #$(shell cp  $(KBUILD_TOP)/ssv6051.ko $(KO_PATH)/ssv6051.ko)
-
