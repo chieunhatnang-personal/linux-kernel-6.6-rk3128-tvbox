@@ -660,6 +660,29 @@ static void rockchip_of_get_lkg_sel(struct device *dev, struct device_node *np,
 	struct property *prop = NULL;
 	int leakage = -EINVAL, ret = 0;
 	char name[NAME_MAX];
+	bool have_prop = false;
+
+	if (process >= 0) {
+		snprintf(name, sizeof(name),
+			 "rockchip,p%d-leakage-voltage-sel", process);
+		if (of_find_property(np, name, NULL))
+			have_prop = true;
+
+		snprintf(name, sizeof(name),
+			 "rockchip,p%d-leakage-scaling-sel", process);
+		if (of_find_property(np, name, NULL))
+			have_prop = true;
+	}
+
+	if (!have_prop) {
+		if (of_find_property(np, "rockchip,leakage-voltage-sel", NULL) ||
+		    of_find_property(np, "rockchip,leakage-scaling-sel", NULL))
+			have_prop = true;
+	}
+
+	/* No leakage-based selection configured for this OPP table. */
+	if (!have_prop)
+		return;
 
 	rockchip_get_leakage_version(&lkg_version);
 
@@ -1187,6 +1210,36 @@ static void rockchip_of_get_pvtm_sel(struct device *dev, struct device_node *np,
 	char name[NAME_MAX];
 	int pvtm, ret;
 	u32 hw = 0;
+	bool have_prop = false;
+
+	if (info->process >= 0) {
+		snprintf(name, sizeof(name),
+			 "rockchip,p%d-pvtm-voltage-sel", info->process);
+		if (of_find_property(np, name, NULL))
+			have_prop = true;
+
+		snprintf(name, sizeof(name),
+			 "rockchip,p%d-pvtm-scaling-sel", info->process);
+		if (of_find_property(np, name, NULL))
+			have_prop = true;
+	} else if (info->bin > 0) {
+		snprintf(name, sizeof(name), "rockchip,pvtm-voltage-sel-B%d",
+			 info->bin);
+		if (of_find_property(np, name, NULL))
+			have_prop = true;
+		if (of_find_property(np, "rockchip,pvtm-voltage-sel-hw", NULL))
+			have_prop = true;
+	}
+
+	if (!have_prop) {
+		if (of_find_property(np, "rockchip,pvtm-voltage-sel", NULL) ||
+		    of_find_property(np, "rockchip,pvtm-scaling-sel", NULL))
+			have_prop = true;
+	}
+
+	/* No PVTM-based selection configured for this OPP table. */
+	if (!have_prop)
+		return;
 
 	if (of_property_read_bool(np, "rockchip,pvtm-pvtpll"))
 		pvtm = rockchip_get_pvtm_pvtpll(dev, np, info, reg_name);

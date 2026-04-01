@@ -214,6 +214,23 @@ static bool __init cpu0_node_has_opp_v2_prop(void)
 	return ret;
 }
 
+static bool __init rockchip_legacy_cpufreq_dt_allowed(struct device_node *np)
+{
+#if defined(CONFIG_ARM_ROCKCHIP_CPUFREQ)
+	return false;
+#else
+	/*
+	 * Old Rockchip ARMv7 SoCs normally rely on the Rockchip cpufreq
+	 * helper to create the cpufreq-dt platform device. If that helper
+	 * is disabled, allow generic cpufreq-dt instantiation here so OPP
+	 * based DVFS can still probe.
+	 */
+	return of_device_is_compatible(np, "rockchip,rk3036") ||
+	       of_device_is_compatible(np, "rockchip,rk3126") ||
+	       of_device_is_compatible(np, "rockchip,rk3128");
+#endif
+}
+
 static int __init cpufreq_dt_platdev_init(void)
 {
 	struct device_node *np = of_find_node_by_path("/");
@@ -229,7 +246,9 @@ static int __init cpufreq_dt_platdev_init(void)
 		goto create_pdev;
 	}
 
-	if (cpu0_node_has_opp_v2_prop() && !of_match_node(blocklist, np))
+	if (cpu0_node_has_opp_v2_prop() &&
+	    (!of_match_node(blocklist, np) ||
+	     rockchip_legacy_cpufreq_dt_allowed(np)))
 		goto create_pdev;
 
 	of_node_put(np);
