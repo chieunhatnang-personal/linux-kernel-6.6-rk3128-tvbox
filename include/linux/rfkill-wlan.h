@@ -6,6 +6,7 @@
 #include <linux/init.h>
 #include <linux/device.h>
 #include <linux/clk.h>
+#include <linux/of.h>
 
 struct rksdmmc_iomux {
     char    *name;  //set the MACRO of gpio
@@ -41,9 +42,10 @@ struct rksdmmc_gpio_wifi_moudle {
     struct rksdmmc_gpio   gps_sync;
     struct rksdmmc_gpio   ANTSEL2;  //pin5--ANTSEL2  
     struct rksdmmc_gpio   ANTSEL3;  //pin6--ANTSEL3 
-    struct rksdmmc_gpio   GPS_LAN;  //pin33--GPS_LAN
-    struct regmap *grf;
+	struct rksdmmc_gpio   GPS_LAN;  //pin33--GPS_LAN
+	struct regmap *grf;
 	struct clk *ext_clk;
+	struct device_node *sdio_host_node;
 };
 
 #if IS_REACHABLE(CONFIG_RFKILL_RK)

@@ -242,6 +242,14 @@ static int sip_recalc_credit_claim(struct esp_sip *sip, int force)
 {
 	int ret;
 
+	/*
+	 * Boot-time control events can arrive before SIP_EVT_BOOTUP programs
+	 * the negotiated block sizes. Recalc-credit traffic is only meaningful
+	 * once the normal runtime datapath is up.
+	 */
+	if (atomic_read(&sip->state) != SIP_RUN || !sip->tx_blksz)
+		return 0;
+
 	if (atomic_read(&sip->credit_status) == RECALC_CREDIT_ENABLE && force == 0)
 		return 1;
 
@@ -357,6 +365,11 @@ static bool sip_rx_pkt_process(struct esp_sip * sip, struct sk_buff *skb)
 	 */
 	remains_len = hdr->len;
 	first_pkt_len = hdr->h_credits >> 12;
+
+	if (first_pkt_len == 0 && remains_len >= sizeof(struct sip_hdr) &&
+	    SIP_HDR_IS_CTRL(hdr)) {
+		first_pkt_len = remains_len;
+	}
 	hdr->len = first_pkt_len;
 
 	esp_dbg(ESP_DBG_TRACE, "%s first_pkt_len %d, whole pkt len %d \n", __func__, first_pkt_len, remains_len);
@@ -636,6 +649,11 @@ void sip_rxq_process(struct work_struct *work)
         mutex_lock(&sip->rx_mtx);
         _sip_rxq_process(sip);
         mutex_unlock(&sip->rx_mtx);
+
+	if (unlikely(atomic_read(&sip->state) == SIP_SEND_INIT)) {
+		sip_send_chip_init(sip);
+		atomic_set(&sip->state, SIP_WAIT_BOOTUP);
+	}
 }
 
 static inline void sip_rx_pkt_enqueue(struct esp_sip *sip, struct sk_buff *skb)
@@ -667,10 +685,14 @@ int sip_rx(struct esp_pub *epub)
         u8 *rx_buf = NULL;
         u32 rx_blksz;
         struct sk_buff *rx_skb = NULL;
+        bool boot_stage;
+        bool read_noround;
 
         u32 first_sz; 
 
         first_sz = sif_get_regs(epub)->config_w0;
+        boot_stage = atomic_read(&sip->state) >= SIP_PREPARE_BOOT &&
+                     atomic_read(&sip->state) <= SIP_WAIT_BOOTUP;
 
 	if (likely(sif_get_ate_config() != 1)) {
 		do {
@@ -679,10 +701,8 @@ int sip_rx(struct esp_pub *epub)
 			if (raw_seq != sip->to_host_seq) {
 				if (raw_seq == sip->to_host_seq + 1) { /* when last read pkt crc err, this situation may occur, but raw_seq mustn't < to_host_Seq */
 					sip->to_host_seq = raw_seq;
-					esp_dbg(ESP_DBG_TRACE, "warn: to_host_seq reg 0x%02x, seq 0x%02x", raw_seq, sip->to_host_seq);
 					break;
 				}     
-				esp_dbg(ESP_DBG_ERROR, "err: to_host_seq reg 0x%02x, seq 0x%02x", raw_seq, sip->to_host_seq);
 				goto _err;
 			}
 		} while (0);
@@ -697,6 +717,7 @@ int sip_rx(struct esp_pub *epub)
          *  read_buf_pointe access.  It coule be optimized late.
          */
         rx_blksz = sif_get_blksz(epub);
+        read_noround = boot_stage || first_sz <= SIP_CTRL_BUF_SZ;
 #ifdef ESP_PREALLOC
         first_skb = esp_get_sip_skb(roundup(first_sz, rx_blksz));
 #else 
@@ -736,16 +757,36 @@ int sip_rx(struct esp_pub *epub)
 
 #ifdef ESP_ACK_INTERRUPT
 #ifdef ESP_ACK_LATER
-		err = esp_common_read(epub, rx_buf, first_sz, ESP_SIF_NOSYNC, false);
+		err = esp_common_read(epub, rx_buf, first_sz, ESP_SIF_NOSYNC, read_noround);
         sif_platform_ack_interrupt(epub);
 #else
         sif_platform_ack_interrupt(epub);
-		err = esp_common_read(epub, rx_buf, first_sz, ESP_SIF_NOSYNC, false);
+		err = esp_common_read(epub, rx_buf, first_sz, ESP_SIF_NOSYNC, read_noround);
 #endif /* ESP_ACK_LATER */
 #else
-        err = esp_common_read(epub, rx_buf, first_sz, ESP_SIF_NOSYNC, false);
+        err = esp_common_read(epub, rx_buf, first_sz, ESP_SIF_NOSYNC, read_noround);
 #endif //ESP_ACK_INTERRUPT
 	sip_rx_count++;
+        if (unlikely(err) && atomic_read(&sip->state) == SIP_RUN) {
+                int ack_err;
+
+                ack_err = sif_ack_target_read_err(epub);
+                if (!ack_err) {
+                        mdelay(2);
+#ifdef ESP_ACK_INTERRUPT
+#ifdef ESP_ACK_LATER
+		        err = esp_common_read(epub, rx_buf, first_sz, ESP_SIF_NOSYNC, read_noround);
+                        sif_platform_ack_interrupt(epub);
+#else
+                        sif_platform_ack_interrupt(epub);
+		        err = esp_common_read(epub, rx_buf, first_sz, ESP_SIF_NOSYNC, read_noround);
+#endif /* ESP_ACK_LATER */
+#else
+                        err = esp_common_read(epub, rx_buf, first_sz, ESP_SIF_NOSYNC, read_noround);
+#endif //ESP_ACK_INTERRUPT
+                }
+        }
+
         if (unlikely(err)) {
                 esp_dbg(ESP_DBG_ERROR, " %s first read err %d %d\n", __func__, err, sif_get_regs(epub)->config_w0);
 #ifdef ESP_PREALLOC
@@ -753,7 +794,7 @@ int sip_rx(struct esp_pub *epub)
 #else
                 kfree_skb(first_skb);
 #endif /* ESP_PREALLOC */
-        	sif_unlock_bus(epub);
+                sif_unlock_bus(epub);
                 goto _err;
         }
 
@@ -892,18 +933,18 @@ static void sip_write_pkts(struct esp_sip *sip, int pm_state)
                 first_shdr->fc[1] |= SIP_HDR_F_NEED_CRDT_RPT;
         }
 
-        /* still use lock bus instead of sif_lldesc_write_sync since we want to protect several global varibles assignments */
+        /* Keep the original serialized TX path; runtime robustness lives in
+         * the low-level SDIO helpers, not in a parallel sync shortcut here.
+         */
         sif_lock_bus(sip->epub);
-
 	err = esp_common_write(sip->epub, sip->tx_aggr_buf, tx_aggr_len, ESP_SIF_NOSYNC);
+        sif_unlock_bus(sip->epub);
 
         sip->tx_aggr_write_ptr = sip->tx_aggr_buf;
         sip->tx_tot_len = 0;
 
-        sif_unlock_bus(sip->epub);
-
 	if (err)
-		esp_sip_dbg(ESP_DBG_ERROR, "func %s err!!!!!!!!!: %d\n", __func__, err);
+		esp_sip_dbg(ESP_DBG_ERROR, "%s err=%d\n", __func__, err);
 
 }
 
@@ -2048,10 +2089,13 @@ int sip_write_memory(struct esp_sip *sip, u32 addr, u8 *buf, u16 len)
                 t = (u32 *)sip->rawbuf;
                 esp_dbg(ESP_DBG_TRACE, "%s t0: 0x%08x t1: 0x%08x t2:0x%08x loadaddr 0x%08x \n", __func__, t[0], t[1], t[2], loadaddr);
 
-				err = esp_common_write(sip->epub, sip->rawbuf, chdr->len, ESP_SIF_SYNC);
+                err = esp_common_write(sip->epub, sip->rawbuf, chdr->len, ESP_SIF_SYNC);
 
                 if (err) {
-                        esp_dbg(ESP_DBG_ERROR, "%s send buffer failed\n", __func__);
+                        esp_dbg(ESP_DBG_ERROR,
+                                "%s send buffer failed err=%d loadaddr=0x%08x chunk_len=%u remains=%u seq=%u\n",
+                                __func__, err, loadaddr, bufsize, remains,
+                                chdr->seq);
                         return err;
                 }
 
@@ -2193,26 +2237,115 @@ sip_reclaim_ctrl_buf(struct esp_sip *sip, struct sip_pkt *pkt, SIP_BUF_TYPE bfty
         spin_unlock_bh(&sip->lock);
 }
 
+static int sip_poll_pending_rx_event(struct esp_sip *sip)
+{
+        struct esp_pub *epub = sip->epub;
+        struct slc_host_regs *regs;
+        int ret;
+        bool boot_stage;
+
+        boot_stage = atomic_read(&sip->state) >= SIP_PREPARE_BOOT &&
+                     atomic_read(&sip->state) <= SIP_WAIT_BOOTUP;
+
+        if (boot_stage && !skb_queue_empty(&sip->rxq)) {
+                flush_work(&sip->rx_process_work);
+                return 0;
+        }
+
+        regs = sif_get_regs(epub);
+        if (!regs)
+                return -ENODEV;
+
+        sif_lock_bus(epub);
+        memset(regs, 0, sizeof(*regs));
+        ret = esp_common_read_with_addr(epub, SLC_HOST_INT_RAW,
+                                        (u8 *)&regs->intr_raw,
+                                        sizeof(regs->intr_raw),
+                                        ESP_SIF_NOSYNC);
+        if (!ret)
+                ret = esp_common_read_with_addr(epub, SLC_HOST_CONF_W0,
+                                                (u8 *)&regs->config_w0,
+                                                sizeof(regs->config_w0),
+                                                ESP_SIF_NOSYNC);
+        if (ret || !(regs->intr_raw & SLC_HOST_RX_ST)) {
+                sif_unlock_bus(epub);
+                return ret ? ret : -EAGAIN;
+        }
+
+        esp_dbg(ESP_DBG_ERROR,
+                "%s: polled pending RX event intr_raw=0x%08x config_w0=0x%08x state=%d\n",
+                __func__, regs->intr_raw, regs->config_w0,
+                atomic_read(&sip->state));
+        esp_dsr(epub);
+        if (boot_stage)
+                flush_work(&sip->rx_process_work);
+        return 0;
+}
+
+static void sip_force_sdio_irq_poll(struct esp_sip *sip)
+{
+	struct esp_sdio_ctrl *sctrl;
+	struct sdio_func *func;
+
+	if (!sip || !sip->epub || !sip->epub->sif)
+		return;
+
+	sctrl = (struct esp_sdio_ctrl *)sip->epub->sif;
+	func = sctrl->func;
+	if (!func || !func->card || !func->card->host)
+		return;
+
+	sdio_signal_irq(func->card->host);
+}
+
 int
 sip_poll_bootup_event(struct esp_sip *sip)
 {
 	int ret = 0;
+	unsigned long deadline;
 
         esp_dbg(ESP_DBG_TRACE, "polling bootup event... \n");
 
-	if (gl_bootup_cplx)
-		ret = wait_for_completion_timeout(gl_bootup_cplx, 2 * HZ);
+	deadline = jiffies + 10 * HZ;
+	while (gl_bootup_cplx && time_before(jiffies, deadline)) {
+		if (atomic_read(&sip->state) == SIP_SEND_INIT) {
+			queue_work(sip->epub->esp_wkq, &sip->rx_process_work);
+			flush_work(&sip->rx_process_work);
+		}
+		ret = wait_for_completion_timeout(gl_bootup_cplx,
+						  msecs_to_jiffies(50));
+		if (ret > 0)
+			break;
+		sip_force_sdio_irq_poll(sip);
+		sip_poll_pending_rx_event(sip);
+	}
 
 	esp_dbg(ESP_DBG_TRACE, "******time remain****** = [%d]\n", ret);
+	if (ret <= 0) {
+		if (atomic_read(&sip->state) == SIP_BOOT) {
+			queue_work(sip->epub->esp_wkq, &sip->rx_process_work);
+			flush_work(&sip->rx_process_work);
+			deadline = jiffies + 10 * HZ;
+			while (gl_bootup_cplx && time_before(jiffies, deadline)) {
+				ret = wait_for_completion_timeout(gl_bootup_cplx,
+								  msecs_to_jiffies(50));
+				if (ret > 0)
+					break;
+				sip_force_sdio_irq_poll(sip);
+				sip_poll_pending_rx_event(sip);
+			}
+		}
+	}
+
 	if (ret <= 0) {
 		esp_dbg(ESP_DBG_ERROR, "bootup event timeout\n");
 		return -ETIMEDOUT;
 	}	
 
+	ret = 0;
+
 	if(sif_get_ate_config() == 0){
 		ret = esp_register_mac80211(sip->epub);
-		printk("esp8089: %s esp_register_mac80211 returned %d\n",
-		       __func__, ret);
 	}
 
 #ifdef TEST_MODE
@@ -2233,11 +2366,19 @@ int
 sip_poll_resetting_event(struct esp_sip *sip)
 {
 	int ret = 0;
+	unsigned long deadline;
 
         esp_dbg(ESP_DBG_TRACE, "polling resetting event... \n");
 
-	if (gl_bootup_cplx)
-		ret = wait_for_completion_timeout(gl_bootup_cplx, 10 * HZ);
+	deadline = jiffies + 10 * HZ;
+	while (gl_bootup_cplx && time_before(jiffies, deadline)) {
+		ret = wait_for_completion_timeout(gl_bootup_cplx,
+						  msecs_to_jiffies(50));
+		if (ret > 0)
+			break;
+		sip_force_sdio_irq_poll(sip);
+		sip_poll_pending_rx_event(sip);
+	}
 
 	esp_dbg(ESP_DBG_TRACE, "******time remain****** = [%d]\n", ret);
 	if (ret <= 0) {

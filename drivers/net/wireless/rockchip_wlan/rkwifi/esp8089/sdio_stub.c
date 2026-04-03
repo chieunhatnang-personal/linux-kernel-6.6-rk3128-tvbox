@@ -5,6 +5,7 @@
  */
 
 #include <linux/delay.h>
+#include <linux/mmc/host.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/rfkill-wlan.h>
@@ -71,25 +72,21 @@ void sif_platform_check_r1_ready(struct esp_pub *epub)
 
 
 #ifdef ESP_ACK_INTERRUPT
-extern void sdmmc_ack_interrupt(struct mmc_host *mmc);
-
 void sif_platform_ack_interrupt(struct esp_pub *epub)
 {
-        struct esp_sdio_ctrl *sctrl = NULL;
-        struct sdio_func *func = NULL;
+        struct sdio_func *func;
+        struct mmc_host *host;
 
-	if (epub == NULL) {
-        	ESSERT(epub != NULL);
-		return;
-	}
-        sctrl = (struct esp_sdio_ctrl *)epub->sif;
-        func = sctrl->func;
-	if (func == NULL) {
-        	ESSERT(func != NULL);
-		return;
-	}
+        if (!epub)
+                return;
 
-        sdmmc_ack_interrupt(func->card->host);
+        func = EPUB_TO_FUNC(epub);
+        if (!func || !func->card || !func->card->host)
+                return;
+
+        host = func->card->host;
+        if (host->ops && host->ops->ack_sdio_irq)
+                host->ops->ack_sdio_irq(host);
 }
 #endif //ESP_ACK_INTERRUPT
  EXPORT_SYMBOL(rockchip_wifi_init_module);

@@ -17,12 +17,39 @@
 
 #include <linux/mmc/sdio_func.h>
 #include "esp_sif.h"
+#include "esp_sip.h"
 #include "slc_host_register.h"
 #include "esp_debug.h"
 
 #ifdef SIF_DEBUG_DSR_DUMP_REG
 static void dump_slc_regs(struct slc_host_regs *regs);
 #endif /* SIF_DEBUG_DSR_DUMP_REG */
+
+static int sif_read_host_regs(struct esp_pub *epub, struct slc_host_regs *regs)
+{
+        int ret;
+
+        memset(regs, 0, sizeof(*regs));
+        ret = esp_common_read_with_addr(epub, REG_SLC_HOST_BASE + 8,
+                                        (u8 *)regs,
+                                        sizeof(*regs),
+                                        ESP_SIF_NOSYNC);
+        if (!ret && regs->config_w0 <= 0x10000)
+                return 0;
+
+        memset(regs, 0, sizeof(*regs));
+        ret = esp_common_read_with_addr(epub, SLC_HOST_INT_RAW,
+                                        (u8 *)&regs->intr_raw,
+                                        sizeof(regs->intr_raw),
+                                        ESP_SIF_NOSYNC);
+        if (!ret)
+                ret = esp_common_read_with_addr(epub, SLC_HOST_CONF_W0,
+                                                (u8 *)&regs->config_w0,
+                                                sizeof(regs->config_w0),
+                                                ESP_SIF_NOSYNC);
+
+        return ret;
+}
 
 int esp_common_read(struct esp_pub *epub, u8 *buf, u32 len, int sync, bool noround)
 {
@@ -515,14 +542,28 @@ void sif_dsr(struct spi_device *spi)
         sif_lock_bus(sctrl->epub);
 
 
-        do {
+	do {
                 int ret =0;
 
-		memset(regs, 0x0, sizeof(struct slc_host_regs));
+		ret = sif_read_host_regs(sctrl->epub, regs);
 
-		ret = esp_common_read_with_addr(sctrl->epub, REG_SLC_HOST_BASE + 8, (u8 *)regs, sizeof(struct slc_host_regs), ESP_SIF_NOSYNC);
-
-                if ( (regs->intr_raw & SLC_HOST_RX_ST) && (ret == 0) ) {
+                if (!ret && (regs->intr_raw & SLC_HOST_RX_ST)) {
+                        if (sctrl->epub->sip &&
+                            atomic_read(&sctrl->epub->sip->chip_init_inflight)) {
+#ifdef ESP_ACK_INTERRUPT
+                                sif_platform_ack_interrupt(sctrl->epub);
+#endif
+                                sif_unlock_bus(sctrl->epub);
+                                break;
+                        }
+                        if (sctrl->epub->sip &&
+                            atomic_read(&sctrl->epub->sip->state) == SIP_SEND_INIT) {
+#ifdef ESP_ACK_INTERRUPT
+                                sif_platform_ack_interrupt(sctrl->epub);
+#endif
+                                sif_unlock_bus(sctrl->epub);
+                                break;
+                        }
                         esp_dbg(ESP_DBG_TRACE, "%s eal intr cnt: %d", __func__, ++real_intr_cnt);
         	
 			esp_dsr(sctrl->epub);
@@ -657,5 +698,3 @@ int sif_get_wakeup_gpio_config(void)
 {
 	return wakeup_gpio;
 }
-
-

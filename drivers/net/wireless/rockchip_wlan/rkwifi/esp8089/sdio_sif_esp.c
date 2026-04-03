@@ -66,6 +66,52 @@ void sif_set_clock(struct sdio_func *func, int clk);
 
 #include "sdio_stub.c"
 
+static int sif_sdio_read_inc_addr(struct sdio_func *func, u32 addr, u8 *buf,
+				  u32 len, bool bytewise)
+{
+	u32 i;
+	int err = 0;
+
+	if (!bytewise)
+		return sdio_memcpy_fromio(func, buf, addr, len);
+
+	for (i = 0; i < len; i++) {
+		buf[i] = sdio_readb(func, addr + i, &err);
+		if (err)
+			return err;
+	}
+
+	return 0;
+}
+
+static int sif_sdio_write_inc_addr(struct sdio_func *func, u32 addr,
+				   u8 *buf, u32 len, bool bytewise)
+{
+	u32 i;
+	u32 off = 0;
+	int err = 0;
+
+	if (!bytewise) {
+		while (off < len) {
+			u32 chunk = min_t(u32, len - off, 512);
+
+			err = sdio_memcpy_toio(func, addr + off, buf + off, chunk);
+			if (err)
+				return err;
+			off += chunk;
+		}
+		return 0;
+	}
+
+	for (i = 0; i < len; i++) {
+		sdio_writeb(func, buf[i], addr + i, &err);
+		if (err)
+			return err;
+	}
+
+	return 0;
+}
+
 void sif_lock_bus(struct esp_pub *epub)
 {
         EPUB_FUNC_CHECK(epub, _exit);
@@ -119,8 +165,13 @@ void sdio_io_writeb(struct esp_pub *epub, u8 value, int addr, int *res)
 int sif_io_raw(struct esp_pub *epub, u32 addr, u8 *buf, u32 len, u32 flag)
 {
         int err = 0;
+        int retry_err = 0;
         u8 *ibuf = NULL;
         bool need_ibuf = false;
+        bool boot_stage = false;
+        bool runtime_target_tx = false;
+        bool force_write_bytewise = false;
+        bool force_read_bytewise = false;
         struct esp_sdio_ctrl *sctrl = NULL;
         struct sdio_func *func = NULL;
 
@@ -138,6 +189,27 @@ int sif_io_raw(struct esp_pub *epub, u32 addr, u8 *buf, u32 len, u32 flag)
 		goto _exit;
 	}
 
+        if (epub->sip &&
+            atomic_read(&epub->sip->state) >= SIP_PREPARE_BOOT &&
+            atomic_read(&epub->sip->state) <= SIP_WAIT_BOOTUP)
+                boot_stage = true;
+
+        if ((flag & SIF_TO_DEVICE) &&
+            (flag & SIF_INC_ADDR) &&
+            epub->sip &&
+            atomic_read(&epub->sip->state) == SIP_RUN &&
+            sctrl->target_id == 0x600) {
+                runtime_target_tx = true;
+                force_write_bytewise = true;
+        }
+
+        if ((flag & SIF_FROM_DEVICE) &&
+            (flag & SIF_INC_ADDR) &&
+            epub->sip &&
+            atomic_read(&epub->sip->state) == SIP_RUN &&
+            sctrl->target_id == 0x600)
+                force_read_bytewise = true;
+
         if (bad_buf(buf)) {
                 esp_dbg(ESP_DBG_TRACE, "%s dst 0x%08x, len %d badbuf\n", __func__, addr, len);
                 need_ibuf = true;
@@ -158,7 +230,21 @@ int sif_io_raw(struct esp_pub *epub, u32 addr, u8 *buf, u32 len, u32 flag)
                 if (flag & SIF_FIXED_ADDR)
                         err = sdio_writesb(func, addr, ibuf, len);
                 else if (flag & SIF_INC_ADDR) {
-                        err = sdio_memcpy_toio(func, addr, ibuf, len);
+                        err = sif_sdio_write_inc_addr(func, addr, ibuf, len,
+                                                      force_write_bytewise || len <= 512);
+                        if (err && runtime_target_tx) {
+                                sif_platform_check_r1_ready(epub);
+                                mdelay(2);
+                                retry_err = sif_sdio_write_inc_addr(func, addr, ibuf,
+                                                                    len,
+                                                                    force_write_bytewise ||
+                                                                    len <= 512);
+                                if (!retry_err) {
+                                        err = 0;
+                                } else {
+                                        err = retry_err;
+                                }
+                        }
                 }
                 sif_platform_check_r1_ready(epub);
         } else if (flag & SIF_FROM_DEVICE) {
@@ -166,7 +252,8 @@ int sif_io_raw(struct esp_pub *epub, u32 addr, u8 *buf, u32 len, u32 flag)
                 if (flag & SIF_FIXED_ADDR)
                         err = sdio_readsb(func, ibuf, addr, len);
                 else if (flag & SIF_INC_ADDR) {
-                        err = sdio_memcpy_fromio(func, ibuf, addr, len);
+                        err = sif_sdio_read_inc_addr(func, addr, ibuf, len,
+                                                     force_read_bytewise || len <= 264);
                 }
 
 
@@ -181,8 +268,11 @@ _exit:
 int sif_io_sync(struct esp_pub *epub, u32 addr, u8 *buf, u32 len, u32 flag)
 {
         int err = 0;
+        int retry_err = 0;
         u8 * ibuf = NULL;
         bool need_ibuf = false;
+        bool boot_stage = false;
+        bool runtime_target_tx = false;
         struct esp_sdio_ctrl *sctrl = NULL;
         struct sdio_func *func = NULL;
 
@@ -200,6 +290,11 @@ int sif_io_sync(struct esp_pub *epub, u32 addr, u8 *buf, u32 len, u32 flag)
 		goto _exit;
 	}
 
+        if (epub->sip &&
+            atomic_read(&epub->sip->state) >= SIP_PREPARE_BOOT &&
+            atomic_read(&epub->sip->state) <= SIP_WAIT_BOOTUP)
+                boot_stage = true;
+
         if (bad_buf(buf)) {
                 esp_dbg(ESP_DBG_TRACE, "%s dst 0x%08x, len %d badbuf\n", __func__, addr, len);
                 need_ibuf = true;
@@ -212,6 +307,13 @@ int sif_io_sync(struct esp_pub *epub, u32 addr, u8 *buf, u32 len, u32 flag)
                 /* round up for block data transcation */
         }
 
+        if ((flag & SIF_TO_DEVICE) &&
+            (flag & SIF_INC_ADDR) &&
+            epub->sip &&
+            atomic_read(&epub->sip->state) == SIP_RUN &&
+            sctrl->target_id == 0x600)
+                runtime_target_tx = true;
+
         if (flag & SIF_TO_DEVICE) {
 
                 esp_dbg(ESP_DBG_TRACE, "%s to addr 0x%08x, len %d \n", __func__, addr, len);
@@ -223,7 +325,25 @@ int sif_io_sync(struct esp_pub *epub, u32 addr, u8 *buf, u32 len, u32 flag)
                 if (flag & SIF_FIXED_ADDR)
                         err = sdio_writesb(func, addr, ibuf, len);
                 else if (flag & SIF_INC_ADDR) {
-                        err = sdio_memcpy_toio(func, addr, ibuf, len);
+                        err = sif_sdio_write_inc_addr(func, addr, ibuf, len,
+                                                      len <= 512);
+                        if (err && runtime_target_tx) {
+                                sif_platform_check_r1_ready(epub);
+                                mdelay(2);
+                                retry_err = sif_sdio_write_inc_addr(func, addr, ibuf,
+                                                                    len, len <= 512);
+                                if (!retry_err) {
+                                        err = 0;
+                                } else {
+                                        err = retry_err;
+                                }
+                        }
+                }
+                if (err) {
+                        esp_dbg(ESP_DBG_ERROR,
+                                "%s write err=%d func=%d addr=0x%08x len=%u flag=0x%08x state=%d\n",
+                                __func__, err, func->num, addr, len, flag,
+                                epub->sdio_state);
                 }
                 sif_platform_check_r1_ready(epub);
                 sdio_release_host(func);
@@ -236,9 +356,16 @@ int sif_io_sync(struct esp_pub *epub, u32 addr, u8 *buf, u32 len, u32 flag)
                 if (flag & SIF_FIXED_ADDR)
                         err = sdio_readsb(func, ibuf, addr, len);
                 else if (flag & SIF_INC_ADDR) {
-                        err = sdio_memcpy_fromio(func, ibuf, addr, len);
+                        err = sif_sdio_read_inc_addr(func, addr, ibuf, len,
+                                                     len <= 264);
                 }
 
+                if (err) {
+                        esp_dbg(ESP_DBG_ERROR,
+                                "%s read err=%d func=%d addr=0x%08x len=%u flag=0x%08x state=%d\n",
+                                __func__, err, func->num, addr, len, flag,
+                                epub->sdio_state);
+                }
                 sdio_release_host(func);
 
                 if (!err && need_ibuf)
@@ -253,6 +380,7 @@ int sif_lldesc_read_sync(struct esp_pub *epub, u8 *buf, u32 len)
 {
         struct esp_sdio_ctrl *sctrl = NULL;
         u32 read_len;
+        bool boot_stage = false;
 
 	if (epub == NULL || buf == NULL) {
         	ESSERT(0);
@@ -260,13 +388,17 @@ int sif_lldesc_read_sync(struct esp_pub *epub, u8 *buf, u32 len)
 	}
 
         sctrl = (struct esp_sdio_ctrl *)epub->sif;
+        if (epub->sip &&
+            atomic_read(&epub->sip->state) >= SIP_PREPARE_BOOT &&
+            atomic_read(&epub->sip->state) <= SIP_WAIT_BOOTUP)
+                boot_stage = true;
 
         switch(sctrl->target_id) {
         case 0x100:
                 read_len = len;
                 break;
         case 0x600:
-                read_len = roundup(len, sctrl->slc_blk_sz);
+                read_len = boot_stage ? len : roundup(len, sctrl->slc_blk_sz);
                 break;
         default:
                 read_len = len;
@@ -280,6 +412,7 @@ int sif_lldesc_write_sync(struct esp_pub *epub, u8 *buf, u32 len)
 {
         struct esp_sdio_ctrl *sctrl = NULL;
         u32 write_len;
+        bool boot_stage = false;
 
 	if (epub == NULL || buf == NULL) {
         	ESSERT(0);
@@ -287,13 +420,25 @@ int sif_lldesc_write_sync(struct esp_pub *epub, u8 *buf, u32 len)
 	}
 
         sctrl = (struct esp_sdio_ctrl *)epub->sif;
+        if (epub->sip &&
+            atomic_read(&epub->sip->state) >= SIP_PREPARE_BOOT &&
+            atomic_read(&epub->sip->state) <= SIP_WAIT_BOOTUP)
+                boot_stage = true;
 
         switch(sctrl->target_id) {
         case 0x100:
                 write_len = len;
                 break;
         case 0x600:
-                write_len = roundup(len, sctrl->slc_blk_sz);
+                /*
+                 * On RK3128/6.6 the remaining runtime TX failures are all
+                 * small lldesc packets timing out while the same payload sizes
+                 * read back correctly. Keep target 0x600 writes exact-length
+                 * here so the sync path uses the same bytewise transport as the
+                 * proven raw workaround instead of pushing padded bytes into the
+                 * live SLC window.
+                 */
+                write_len = len;
                 break;
         default:
                 write_len = len;
@@ -307,6 +452,7 @@ int sif_lldesc_read_raw(struct esp_pub *epub, u8 *buf, u32 len, bool noround)
 {
         struct esp_sdio_ctrl *sctrl = NULL;
         u32 read_len;
+        bool boot_stage = false;
 
 	if (epub == NULL || buf == NULL) {
         	ESSERT(0);
@@ -314,16 +460,17 @@ int sif_lldesc_read_raw(struct esp_pub *epub, u8 *buf, u32 len, bool noround)
 	}
 
         sctrl = (struct esp_sdio_ctrl *)epub->sif;
+        if (epub->sip &&
+            atomic_read(&epub->sip->state) >= SIP_PREPARE_BOOT &&
+            atomic_read(&epub->sip->state) <= SIP_WAIT_BOOTUP)
+                boot_stage = true;
 
         switch(sctrl->target_id) {
         case 0x100:
                 read_len = len;
                 break;
         case 0x600:
-		if(!noround)
-                	read_len = roundup(len, sctrl->slc_blk_sz);
-		else
-			read_len = len;
+                read_len = len;
                 break;
         default:
                 read_len = len;
@@ -337,6 +484,7 @@ int sif_lldesc_write_raw(struct esp_pub *epub, u8 *buf, u32 len)
 {
         struct esp_sdio_ctrl *sctrl = NULL;
         u32 write_len;
+        int err;
 
 	if (epub == NULL || buf == NULL) {
         	ESSERT(0);
@@ -350,13 +498,22 @@ int sif_lldesc_write_raw(struct esp_pub *epub, u8 *buf, u32 len)
                 write_len = len;
                 break;
         case 0x600:
-                write_len = roundup(len, sctrl->slc_blk_sz);
+                /*
+                 * 4.4 rounded runtime writes to the SLC block size. On this
+                 * 6.6 RK3128 port, the runtime TX failures are all timing out
+                 * inside the raw lldesc write path while credits remain valid.
+                 * Test exact-length writes here to avoid overrunning the live
+                 * packet with padded transfer bytes on newer MMC behavior.
+                 */
+                write_len = len;
                 break;
         default:
                 write_len = len;
                 break;
         }
-        return sif_io_raw((epub), (sctrl->slc_window_end_addr - (len)), (buf), (write_len), SIF_TO_DEVICE | SIF_BYTE_BASIS | SIF_INC_ADDR);
+        err = sif_io_raw((epub), (sctrl->slc_window_end_addr - (len)), (buf),
+                         (write_len), SIF_TO_DEVICE | SIF_BYTE_BASIS | SIF_INC_ADDR);
+        return err;
 
 }
 
@@ -605,7 +762,7 @@ static int esp_sdio_probe(struct sdio_func *func, const struct sdio_device_id *i
 			goto _err_second_init;
         }
 
-        esp_dbg(ESP_DBG_TRACE, " %s return  %d\n", __func__, err);
+	esp_dbg(ESP_DBG_TRACE, " %s return  %d\n", __func__, err);
 	if(sif_sdio_state == ESP_SDIO_STATE_FIRST_INIT){
 		esp_dbg(ESP_DBG_ERROR, "first normal exit\n");
 		sif_sdio_state = ESP_SDIO_STATE_FIRST_NORMAL_EXIT;
@@ -811,7 +968,7 @@ static int /*__init*/ esp_sdio_init(void)
         printk(KERN_INFO "\n========= ESP8089 driver modified by https://chieunhatnang.de =========\n");
         edf_ret = esp_debugfs_init();
 
-	request_init_conf();
+        request_init_conf();
 
         esp_wakelock_init();
         esp_wake_lock();
@@ -843,7 +1000,7 @@ static int /*__init*/ esp_sdio_init(void)
 		sif_record_retry_config();
 
                 sdio_unregister_driver(&esp_sdio_dummy_driver);
-                
+
                 sif_platform_target_poweroff();
                 
         } while (retry--);
@@ -873,6 +1030,7 @@ static int /*__init*/ esp_sdio_init(void)
 		sdio_unregister_driver(&esp_sdio_driver);
 
 		msleep(100);
+
 		sif_platform_rescan_card(0);
 		msleep(200);
 

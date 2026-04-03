@@ -1383,6 +1383,14 @@ static void __dw_mci_start_request(struct dw_mci *host,
 
 	data = cmd->data;
 	if (data) {
+		/*
+		 * 4.4 kept DW-MMC data timeout at the maximum value for SDIO
+		 * traffic. RK3128 + ESP8089 boot control reads are timing out
+		 * on 6.6 with the computed timeout path, even though firmware
+		 * download and interrupt delivery already work. Keep the newer
+		 * timeout calculation for MMC/SD cards, but restore the old
+		 * max-timeout behavior for SDIO requests.
+		 */
 		dw_mci_set_data_timeout(host, data->timeout_ns);
 		if (host->is_rv1106_sd && (data->flags & MMC_DATA_WRITE))
 			mci_writel(host, BYTCNT, 0);
@@ -3130,8 +3138,19 @@ static int dw_mci_init_slot_caps(struct dw_mci_slot *slot)
 	if (!mmc->f_max)
 		mmc->f_max = DW_MCI_FREQ_MAX;
 
-	/* Process SDIO IRQs through the sdio_irq_work. */
-	if (mmc->caps & MMC_CAP_SDIO_IRQ)
+	/*
+	 * Older Rockchip dw-mshc users (rk2928/rk3036/rk3128 class) were
+	 * working on the threaded SDIO IRQ path in 4.4. Keep that behaviour
+	 * here, as forcing the NOTHREAD path regressed ESP8089 boot traffic.
+	 */
+	if ((mmc->caps & MMC_CAP_SDIO_IRQ) &&
+	    !(host->dev->of_node &&
+	      (of_device_is_compatible(host->dev->of_node,
+				       "rockchip,rk2928-dw-mshc") ||
+	       of_device_is_compatible(host->dev->of_node,
+				       "rockchip,rk3036-dw-mshc") ||
+	       of_device_is_compatible(host->dev->of_node,
+				       "rockchip,rk3128-dw-mshc"))))
 		mmc->caps2 |= MMC_CAP2_SDIO_IRQ_NOTHREAD;
 
 	return 0;

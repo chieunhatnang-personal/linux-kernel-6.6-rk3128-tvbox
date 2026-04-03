@@ -139,6 +139,12 @@ int esp_pub_init_all(struct esp_pub *epub)
 	gl_bootup_cplx = &complete;
 	epub->wait_reset = 0;
 	sif_enable_irq(epub);
+
+	if (epub->sdio_state == ESP_SDIO_STATE_SECOND_INIT) {
+		sif_lock_bus(epub);
+		sif_interrupt_target(epub, 7);
+		sif_unlock_bus(epub);
+	}
 	
 	if(epub->sdio_state == ESP_SDIO_STATE_SECOND_INIT || sif_get_ate_config() == 1){
 		ret = sip_poll_bootup_event(epub->sip);
@@ -242,6 +248,11 @@ static int esp_download_fw(struct esp_pub * epub)
 
                 bhdr = (struct esp_fw_blk_hdr *)(&fw_buf[offset]);
                 offset += sizeof(struct esp_fw_blk_hdr);
+
+                esp_dbg(ESP_DBG_ERROR,
+                        "%s fw block load_addr=0x%08x len=%u blocks_left=%u sdio_state=%d\n",
+                        __func__, bhdr->load_addr, bhdr->data_len, blocks,
+                        epub->sdio_state);
 
                 ret = sip_write_memory(epub->sip, bhdr->load_addr, &fw_buf[offset], bhdr->data_len);
 

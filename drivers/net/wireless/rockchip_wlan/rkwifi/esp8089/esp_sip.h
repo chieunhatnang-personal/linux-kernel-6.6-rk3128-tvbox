@@ -117,6 +117,7 @@ struct esp_sip {
 
         atomic_t data_tx_stopped;
         atomic_t tx_stopped;
+        atomic_t chip_init_inflight;
 
         struct esp_pub *epub;
 };

@@ -145,7 +145,6 @@ int sip_parse_events(struct esp_sip *sip, u8 *buf)
 
         switch (hdr->c_evtid) {
 	case SIP_EVT_TARGET_ON: {
-		/* use rx work queue to send... */
 		if (atomic_read(&sip->state) == SIP_PREPARE_BOOT || atomic_read(&sip->state) == SIP_BOOT) {
 			atomic_set(&sip->state, SIP_SEND_INIT);
 			queue_work(sip->epub->esp_wkq, &sip->rx_process_work);
@@ -169,7 +168,8 @@ int sip_parse_events(struct esp_sip *sip, u8 *buf)
         }
 	case SIP_EVT_RESETTING:{
         	sip->epub->wait_reset = 1;                       
-        	if (gl_bootup_cplx)	
+        	if (gl_bootup_cplx &&
+                    sip->epub->sdio_state != ESP_SDIO_STATE_SECOND_INIT)
 			complete(gl_bootup_cplx);
 		break;
 	}
@@ -378,9 +378,11 @@ void sip_send_chip_init(struct esp_sip *sip)
 
 	fix_init_data(esp_init_data, size);
 
+	atomic_set(&sip->chip_init_inflight, 1);
 	atomic_sub(1, &sip->tx_credits);
 	
 	sip_send_cmd(sip, SIP_CMD_INIT, size, (void *)esp_init_data);
+	atomic_set(&sip->chip_init_inflight, 0);
 
 #ifndef HAS_INIT_DATA
         kfree(esp_init_data);
