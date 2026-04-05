@@ -281,7 +281,7 @@
 
 &dmc {
 	center-supply = <&logic_vdd_log>;
-	status = "disabled";
+	status = "okay";
 };
 
 &emmc {
