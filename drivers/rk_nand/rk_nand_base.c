@@ -10,6 +10,7 @@
 #include <asm/cacheflush.h>
 #include <linux/clk.h>
 #include <linux/debugfs.h>
+#include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <linux/irq.h>
 #include <linux/interrupt.h>
@@ -21,7 +22,10 @@
 #endif
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
+#include <linux/proc_fs.h>
+#include <linux/sched.h>
 #include <linux/slab.h>
+#include <linux/stdarg.h>
 #include <linux/timer.h>
 #include <linux/uaccess.h>
 
@@ -47,6 +51,34 @@ static int nandc0_ready_completed_flag;
 static int nandc1_xfer_completed_flag;
 static int nandc1_ready_completed_flag;
 static int rk_timer_add;
+
+void *__rknand_PDE_DATA(const struct inode *inode)
+{
+	return pde_data(inode);
+}
+
+void __rknand_usleep_range(unsigned long min, unsigned long max)
+{
+	usleep_range_state(min, max, TASK_UNINTERRUPTIBLE);
+}
+
+#undef printk
+asmlinkage int printk(const char *fmt, ...)
+{
+	va_list args;
+	int ret;
+
+	va_start(args, fmt);
+	ret = vprintk(fmt, args);
+	va_end(args);
+
+	return ret;
+}
+
+asm(".global PDE_DATA\n"
+    "PDE_DATA = __rknand_PDE_DATA\n"
+    ".global usleep_range\n"
+    "usleep_range = __rknand_usleep_range\n");
 
 void *ftl_malloc(int size)
 {

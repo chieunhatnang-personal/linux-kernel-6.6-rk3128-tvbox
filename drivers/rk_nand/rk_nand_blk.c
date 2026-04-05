@@ -39,6 +39,9 @@
 #include "rk_nand_blk.h"
 #include "rk_ftl_api.h"
 
+static struct nand_part disk_array[MAX_PART_COUNT];
+static int g_max_part_num;
+
 #define PART_READONLY 0x85
 #define PART_WRITEONLY 0x86
 #define PART_NO_ACCESS 0x87
@@ -184,9 +187,18 @@ static int req_check_buffer_align(struct request *req, char **pbuf)
 	return 1;
 }
 
-static blk_status_t do_blktrans_all_request(struct nand_blk_dev *dev,
-					    struct request *req)
+static struct nand_blk_dev *rknand_req_to_dev(struct request *req)
 {
+	if (!req->part || !req->part->bd_disk)
+		return NULL;
+
+	return req->part->bd_disk->private_data;
+}
+
+static blk_status_t do_blktrans_all_request(struct request *req)
+{
+	struct nand_blk_dev *dev = rknand_req_to_dev(req);
+	struct gendisk *disk;
 	unsigned long block, nsect;
 	char *buf = NULL, *page_buf;
 	struct req_iterator rq_iter;
@@ -194,11 +206,16 @@ static blk_status_t do_blktrans_all_request(struct nand_blk_dev *dev,
 	int ret = BLK_STS_IOERR;
 	unsigned long totle_nsect;
 
+	if (!dev)
+		return BLK_STS_IOERR;
+
+	disk = req->part->bd_disk;
+
 	block = blk_rq_pos(req);
 	nsect = blk_rq_cur_bytes(req) >> 9;
 	totle_nsect = (req->__data_len) >> 9;
 
-	if (blk_rq_pos(req) + blk_rq_cur_sectors(req) > get_capacity(req->rq_disk))
+	if (blk_rq_pos(req) + blk_rq_cur_sectors(req) > get_capacity(disk))
 		return BLK_STS_IOERR;
 
 	switch (req_op(req)) {
@@ -253,9 +270,8 @@ static blk_status_t do_blktrans_all_request(struct nand_blk_dev *dev,
 	}
 }
 
-static struct request *rk_nand_next_request(struct nand_blk_dev *dev)
+static struct request *rk_nand_next_request(struct nand_blk_ops *nand_ops)
 {
-	struct nand_blk_ops *nand_ops = dev->nand_ops;
 	struct request *rq;
 
 	rq = list_first_entry_or_null(&nand_ops->rq_list, struct request, queuelist);
@@ -268,23 +284,23 @@ static struct request *rk_nand_next_request(struct nand_blk_dev *dev)
 	return NULL;
 }
 
-static void rk_nand_blktrans_work(struct nand_blk_dev *dev)
-	__releases(&dev->nand_ops->queue_lock)
-	__acquires(&dev->nand_ops->queue_lock)
+static void rk_nand_blktrans_work(struct nand_blk_ops *nand_ops)
+	__releases(&nand_ops->queue_lock)
+	__acquires(&nand_ops->queue_lock)
 {
 	struct request *req = NULL;
 
 	while (1) {
 		blk_status_t res;
 
-		req = rk_nand_next_request(dev);
+		req = rk_nand_next_request(nand_ops);
 		if (!req)
 			break;
 
-		spin_unlock_irq(&dev->nand_ops->queue_lock);
+		spin_unlock_irq(&nand_ops->queue_lock);
 
 		rknand_device_lock();
-		res = do_blktrans_all_request(dev, req);
+		res = do_blktrans_all_request(req);
 		rknand_device_unlock();
 
 		if (!blk_update_request(req, res, req->__data_len)) {
@@ -292,30 +308,30 @@ static void rk_nand_blktrans_work(struct nand_blk_dev *dev)
 			req = NULL;
 		}
 
-		spin_lock_irq(&dev->nand_ops->queue_lock);
+		spin_lock_irq(&nand_ops->queue_lock);
 	}
 }
 
 static blk_status_t rk_nand_queue_rq(struct blk_mq_hw_ctx *hctx,
 				     const struct blk_mq_queue_data *bd)
 {
-	struct nand_blk_dev *dev;
+	struct nand_blk_ops *nand_ops;
 
-	dev = hctx->queue->queuedata;
-	if (!dev) {
+	nand_ops = hctx->queue->queuedata;
+	if (!nand_ops) {
 		blk_mq_start_request(bd->rq);
 		return BLK_STS_IOERR;
 	}
 
 	rk_ftl_gc_do = 0;
-	spin_lock_irq(&dev->nand_ops->queue_lock);
-	list_add_tail(&bd->rq->queuelist, &dev->nand_ops->rq_list);
-	rk_nand_blktrans_work(dev);
-	spin_unlock_irq(&dev->nand_ops->queue_lock);
+	spin_lock_irq(&nand_ops->queue_lock);
+	list_add_tail(&bd->rq->queuelist, &nand_ops->rq_list);
+	rk_nand_blktrans_work(nand_ops);
+	spin_unlock_irq(&nand_ops->queue_lock);
 
 	/* wake up gc thread */
 	rk_ftl_gc_do = 1;
-	wake_up(&dev->nand_ops->thread_wq);
+	wake_up(&nand_ops->thread_wq);
 
 	return BLK_STS_OK;
 }
@@ -378,16 +394,16 @@ static int nand_gc_thread(void *arg)
 	}
 	pr_info("nand gc quited\n");
 	nand_ops->nand_th_quited = 1;
-	complete_and_exit(&nand_ops->thread_exit, 0);
+	kthread_complete_and_exit(&nand_ops->thread_exit, 0);
 	return 0;
 }
 
-static int rknand_open(struct block_device *bdev, fmode_t mode)
+static int rknand_open(struct gendisk *disk, blk_mode_t mode)
 {
 	return 0;
 }
 
-static void rknand_release(struct gendisk *disk, fmode_t mode)
+static void rknand_release(struct gendisk *disk)
 {
 };
 
@@ -435,11 +451,105 @@ static struct nand_blk_ops mytr = {
 	.minorbits = 0,
 	.owner = THIS_MODULE,
 };
+static struct lock_class_key rknand_bio_compl_lkclass;
+
+static int rknand_get_part(char *parts, struct nand_part *this_part,
+			   int *part_index)
+{
+	char delim;
+	unsigned int mask_flags;
+	unsigned long long size, offset = ULLONG_MAX;
+	char name[40] = "\0";
+
+	if (*parts == '-') {
+		size = ULLONG_MAX;
+		parts++;
+	} else {
+		size = memparse(parts, &parts);
+	}
+
+	if (*parts == '@') {
+		parts++;
+		offset = memparse(parts, &parts);
+	}
+
+	mask_flags = 0;
+	delim = 0;
+
+	if (*parts == '(')
+		delim = ')';
+
+	if (delim) {
+		char *p = strchr(parts + 1, delim);
+		size_t len;
+
+		if (!p)
+			return 0;
+		len = min_t(size_t, sizeof(name) - 1, p - (parts + 1));
+		memcpy(name, parts + 1, len);
+		name[len] = '\0';
+		parts = p + 1;
+	}
+
+	if (strncmp(parts, "ro", 2) == 0) {
+		mask_flags = PART_READONLY;
+		parts += 2;
+	}
+
+	if (strncmp(parts, "wo", 2) == 0) {
+		mask_flags = PART_WRITEONLY;
+		parts += 2;
+	}
+
+	this_part->size = (unsigned long)size;
+	this_part->offset = (unsigned long)offset;
+	this_part->type = mask_flags;
+	strscpy(this_part->name, name, sizeof(this_part->name));
+
+	if ((++(*part_index) < MAX_PART_COUNT) && (*parts == ','))
+		rknand_get_part(++parts, this_part + 1, part_index);
+
+	return 1;
+}
+
+static int nand_parse_cmdline_part(struct nand_part *pdisk_part)
+{
+	char *cmdline;
+	char *parts;
+	unsigned int cap_size = rk_ftl_get_capacity();
+	int part_num = 0;
+	int i;
+
+	cmdline = strstr(saved_command_line, "mtdparts=");
+	if (!cmdline)
+		return 0;
+
+	cmdline += strlen("mtdparts=");
+	if (strncmp(cmdline, "rk29xxnand:", strlen("rk29xxnand:")) != 0)
+		return 0;
+
+	parts = cmdline + strlen("rk29xxnand:");
+	rknand_get_part(parts, pdisk_part, &part_num);
+	if (part_num)
+		pdisk_part[part_num - 1].size = cap_size -
+			pdisk_part[part_num - 1].offset;
+
+	for (i = 0; i < part_num; i++) {
+		if (pdisk_part[i].size + pdisk_part[i].offset > cap_size) {
+			pdisk_part[i].size = cap_size - pdisk_part[i].offset;
+			pr_err("partition error....max cap:%x\n", cap_size);
+			return pdisk_part[i].size ? i + 1 : i;
+		}
+	}
+
+	return part_num;
+}
 
 static int nand_add_dev(struct nand_blk_ops *nand_ops, struct nand_part *part)
 {
 	struct nand_blk_dev *dev;
 	struct gendisk *gd;
+	int ret;
 
 	if (part->size == 0)
 		return -1;
@@ -448,12 +558,11 @@ static int nand_add_dev(struct nand_blk_ops *nand_ops, struct nand_part *part)
 	if (!dev)
 		return -ENOMEM;
 
-	gd = alloc_disk(1 << nand_ops->minorbits);
+	gd = blk_mq_alloc_disk_for_queue(nand_ops->rq, &rknand_bio_compl_lkclass);
 	if (!gd) {
 		kfree(dev);
 		return -ENOMEM;
 	}
-	nand_ops->rq->queuedata = dev;
 	dev->nand_ops = nand_ops;
 	dev->size = part->size;
 	dev->off_size = part->offset;
@@ -466,13 +575,14 @@ static int nand_add_dev(struct nand_blk_ops *nand_ops, struct nand_part *part)
 
 	gd->fops = &nand_blktrans_ops;
 
-	gd->flags = GENHD_FL_EXT_DEVT;
-	gd->minors = 255;
-	snprintf(gd->disk_name,
-		 sizeof(gd->disk_name),
-		 "%s%d",
-		 nand_ops->name,
-		 dev->devnum);
+	if (part->name[0]) {
+		snprintf(gd->disk_name, sizeof(gd->disk_name), "%s_%s",
+			 nand_ops->name, part->name);
+	} else {
+		gd->minors = 255;
+		snprintf(gd->disk_name, sizeof(gd->disk_name), "%s%d",
+			 nand_ops->name, dev->devnum);
+	}
 
 	set_capacity(gd, dev->size);
 
@@ -492,7 +602,13 @@ static int nand_add_dev(struct nand_blk_ops *nand_ops, struct nand_part *part)
 	if (dev->readonly)
 		set_disk_ro(gd, 1);
 
-	device_add_disk(g_nand_device, gd, NULL);
+	ret = device_add_disk(g_nand_device, gd, NULL);
+	if (ret) {
+		list_del(&dev->list);
+		put_disk(gd);
+		kfree(dev);
+		return ret;
+	}
 
 	return 0;
 }
@@ -514,6 +630,7 @@ static int nand_remove_dev(struct nand_blk_dev *dev)
 static int nand_blk_register(struct nand_blk_ops *nand_ops)
 {
 	struct nand_part part;
+	int i;
 	int ret;
 
 	rk_nand_schedule_enable_config(1);
@@ -544,8 +661,12 @@ static int nand_blk_register(struct nand_blk_ops *nand_ops)
 		goto tag_set_error;
 	}
 
-	nand_ops->rq = blk_mq_init_sq_queue(nand_ops->tag_set, &rk_nand_mq_ops, 1,
-					   BLK_MQ_F_SHOULD_MERGE | BLK_MQ_F_BLOCKING);
+	ret = blk_mq_alloc_sq_tag_set(nand_ops->tag_set, &rk_nand_mq_ops, 1,
+				      BLK_MQ_F_SHOULD_MERGE | BLK_MQ_F_BLOCKING);
+	if (ret)
+		goto rq_init_error;
+
+	nand_ops->rq = blk_mq_init_queue(nand_ops->tag_set);
 	if (IS_ERR(nand_ops->rq)) {
 		ret = PTR_ERR(nand_ops->rq);
 		nand_ops->rq = NULL;
@@ -555,20 +676,34 @@ static int nand_blk_register(struct nand_blk_ops *nand_ops)
 	blk_queue_max_hw_sectors(nand_ops->rq, MTD_RW_SECTORS);
 	blk_queue_max_segments(nand_ops->rq, MTD_RW_SECTORS);
 
-	blk_queue_flag_set(QUEUE_FLAG_DISCARD, nand_ops->rq);
 	blk_queue_max_discard_sectors(nand_ops->rq, UINT_MAX >> 9);
 	/* discard_granularity config to one nand page size 32KB*/
 	nand_ops->rq->limits.discard_granularity = 64 << 9;
+	nand_ops->rq->queuedata = nand_ops;
 
 	INIT_LIST_HEAD(&nand_ops->devs);
 	kthread_run(nand_gc_thread, (void *)nand_ops, "rknand_gc");
 
+	g_max_part_num = nand_parse_cmdline_part(disk_array);
 	nand_ops->last_dev_index = 0;
 	part.offset = 0;
 	part.size = rk_ftl_get_capacity();
 	part.type = 0;
 	part.name[0] = 0;
 	nand_add_dev(nand_ops, &part);
+
+	if (g_max_part_num) {
+		for (i = 0; i < g_max_part_num; i++) {
+			u32 part_size = disk_array[i].offset + disk_array[i].size;
+
+			pr_info("%10s: 0x%09llx -- 0x%09llx (%llu MB)\n",
+				disk_array[i].name,
+				(u64)disk_array[i].offset * 512,
+				(u64)part_size * 512,
+				(u64)disk_array[i].size / 2048);
+			nand_add_dev(nand_ops, &disk_array[i]);
+		}
+	}
 
 	rknand_create_procfs();
 	rk_ftl_storage_sys_init();
@@ -585,7 +720,9 @@ static int nand_blk_register(struct nand_blk_ops *nand_ops)
 	return 0;
 
 rq_init_error:
+	blk_mq_free_tag_set(nand_ops->tag_set);
 	kfree(nand_ops->tag_set);
+	nand_ops->tag_set = NULL;
 tag_set_error:
 	kfree(mtd_read_temp_buffer);
 	mtd_read_temp_buffer = NULL;
@@ -610,7 +747,10 @@ static void nand_blk_unregister(struct nand_blk_ops *nand_ops)
 
 		nand_remove_dev(dev);
 	}
-	blk_cleanup_queue(nand_ops->rq);
+	blk_mq_destroy_queue(nand_ops->rq);
+	blk_mq_free_tag_set(nand_ops->tag_set);
+	kfree(nand_ops->tag_set);
+	nand_ops->tag_set = NULL;
 	unregister_blkdev(nand_ops->major, nand_ops->name);
 }
 
