@@ -31,6 +31,7 @@
 		__overlay__ {
 			rockchip,no-dmaengine;
 			max-frequency = <37500000>;
+			bus-width = <4>;
 			cap-sd-highspeed;
 			cap-sdio-irq;
 			supports-sdio;

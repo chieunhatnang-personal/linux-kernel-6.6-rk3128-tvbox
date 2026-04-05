@@ -7,6 +7,7 @@
 
 #include <linux/export.h>
 #include <linux/kernel.h>
+#include <linux/property.h>
 #include <linux/mmc/host.h>
 #include <linux/mmc/card.h>
 #include <linux/mmc/sdio.h>
@@ -317,16 +318,28 @@ static int sdio_io_rw_ext_helper(struct sdio_func *func, int write,
 {
 	unsigned remainder = size;
 	unsigned max_blocks;
+	bool pio_single_block;
 	int ret;
 
 	if (!func || (func->num > 7))
 		return -EINVAL;
+
+	/*
+	 * The RK3128 ESP8089 setup is intentionally forced into PIO mode via
+	 * rockchip,no-dmaengine. On 6.6, large multi-block CMD53 transfers on
+	 * that path are unstable, while single-block CMD53 remains viable and
+	 * is still materially faster than byte-at-a-time CMD52 access.
+	 */
+	pio_single_block = device_property_present(mmc_dev(func->card->host),
+						   "rockchip,no-dmaengine");
 
 	/* Do the bulk of the transfer using block mode (if supported). */
 	if (func->card->cccr.multi_block && (size > sdio_max_byte_size(func))) {
 		/* Blocks per command is limited by host count, host transfer
 		 * size and the maximum for IO_RW_EXTENDED of 511 blocks. */
 		max_blocks = min(func->card->host->max_blk_count, 511u);
+		if (pio_single_block)
+			max_blocks = 1;
 
 		while (remainder >= func->cur_blksize) {
 			unsigned blocks;

@@ -208,7 +208,7 @@ int sif_io_raw(struct esp_pub *epub, u32 addr, u8 *buf, u32 len, u32 flag)
             epub->sip &&
             atomic_read(&epub->sip->state) == SIP_RUN &&
             sctrl->target_id == 0x600)
-                force_read_bytewise = true;
+                force_read_bytewise = false;
 
         if (bad_buf(buf)) {
                 esp_dbg(ESP_DBG_TRACE, "%s dst 0x%08x, len %d badbuf\n", __func__, addr, len);
@@ -430,14 +430,6 @@ int sif_lldesc_write_sync(struct esp_pub *epub, u8 *buf, u32 len)
                 write_len = len;
                 break;
         case 0x600:
-                /*
-                 * On RK3128/6.6 the remaining runtime TX failures are all
-                 * small lldesc packets timing out while the same payload sizes
-                 * read back correctly. Keep target 0x600 writes exact-length
-                 * here so the sync path uses the same bytewise transport as the
-                 * proven raw workaround instead of pushing padded bytes into the
-                 * live SLC window.
-                 */
                 write_len = len;
                 break;
         default:
@@ -484,7 +476,6 @@ int sif_lldesc_write_raw(struct esp_pub *epub, u8 *buf, u32 len)
 {
         struct esp_sdio_ctrl *sctrl = NULL;
         u32 write_len;
-        int err;
 
 	if (epub == NULL || buf == NULL) {
         	ESSERT(0);
@@ -498,22 +489,14 @@ int sif_lldesc_write_raw(struct esp_pub *epub, u8 *buf, u32 len)
                 write_len = len;
                 break;
         case 0x600:
-                /*
-                 * 4.4 rounded runtime writes to the SLC block size. On this
-                 * 6.6 RK3128 port, the runtime TX failures are all timing out
-                 * inside the raw lldesc write path while credits remain valid.
-                 * Test exact-length writes here to avoid overrunning the live
-                 * packet with padded transfer bytes on newer MMC behavior.
-                 */
                 write_len = len;
                 break;
         default:
                 write_len = len;
                 break;
         }
-        err = sif_io_raw((epub), (sctrl->slc_window_end_addr - (len)), (buf),
-                         (write_len), SIF_TO_DEVICE | SIF_BYTE_BASIS | SIF_INC_ADDR);
-        return err;
+        return sif_io_raw((epub), (sctrl->slc_window_end_addr - (len)), (buf),
+                          (write_len), SIF_TO_DEVICE | SIF_BYTE_BASIS | SIF_INC_ADDR);
 
 }
 

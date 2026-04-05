@@ -198,7 +198,6 @@ int mmc_io_rw_extended(struct mmc_card *card, int write, unsigned fn,
 
 	return err;
 }
-
 int sdio_reset(struct mmc_host *host)
 {
 	int ret;
@@ -214,4 +213,3 @@ int sdio_reset(struct mmc_host *host)
 
 	return mmc_io_rw_direct_host(host, 1, 0, SDIO_CCCR_ABORT, abort, NULL);
 }
-
