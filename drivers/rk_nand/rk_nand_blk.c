@@ -451,7 +451,6 @@ static struct nand_blk_ops mytr = {
 	.minorbits = 0,
 	.owner = THIS_MODULE,
 };
-static struct lock_class_key rknand_bio_compl_lkclass;
 
 static int rknand_get_part(char *parts, struct nand_part *this_part,
 			   int *part_index)
@@ -545,6 +544,15 @@ static int nand_parse_cmdline_part(struct nand_part *pdisk_part)
 	return part_num;
 }
 
+static void rknand_init_queue(struct request_queue *rq)
+{
+	blk_queue_max_hw_sectors(rq, MTD_RW_SECTORS);
+	blk_queue_max_segments(rq, MTD_RW_SECTORS);
+	blk_queue_max_discard_sectors(rq, UINT_MAX >> 9);
+	/* discard_granularity config to one nand page size 32KB */
+	rq->limits.discard_granularity = 64 << 9;
+}
+
 static int nand_add_dev(struct nand_blk_ops *nand_ops, struct nand_part *part)
 {
 	struct nand_blk_dev *dev;
@@ -558,11 +566,13 @@ static int nand_add_dev(struct nand_blk_ops *nand_ops, struct nand_part *part)
 	if (!dev)
 		return -ENOMEM;
 
-	gd = blk_mq_alloc_disk_for_queue(nand_ops->rq, &rknand_bio_compl_lkclass);
-	if (!gd) {
+	gd = blk_mq_alloc_disk(nand_ops->tag_set, nand_ops);
+	if (IS_ERR(gd)) {
 		kfree(dev);
-		return -ENOMEM;
+		return PTR_ERR(gd);
 	}
+
+	rknand_init_queue(gd->queue);
 	dev->nand_ops = nand_ops;
 	dev->size = part->size;
 	dev->off_size = part->offset;
@@ -572,14 +582,16 @@ static int nand_add_dev(struct nand_blk_ops *nand_ops, struct nand_part *part)
 
 	gd->major = nand_ops->major;
 	gd->first_minor = (dev->devnum) << nand_ops->minorbits;
+	gd->minors = 1;
 
 	gd->fops = &nand_blktrans_ops;
 
 	if (part->name[0]) {
+		gd->flags |= GENHD_FL_NO_PART;
 		snprintf(gd->disk_name, sizeof(gd->disk_name), "%s_%s",
 			 nand_ops->name, part->name);
 	} else {
-		gd->minors = 255;
+		gd->flags |= GENHD_FL_NO_PART;
 		snprintf(gd->disk_name, sizeof(gd->disk_name), "%s%d",
 			 nand_ops->name, dev->devnum);
 	}
@@ -588,7 +600,6 @@ static int nand_add_dev(struct nand_blk_ops *nand_ops, struct nand_part *part)
 
 	gd->private_data = dev;
 	dev->blkcore_priv = gd;
-	gd->queue = nand_ops->rq;
 
 	if (part->type == PART_NO_ACCESS)
 		dev->disable_access = 1;
@@ -666,21 +677,6 @@ static int nand_blk_register(struct nand_blk_ops *nand_ops)
 	if (ret)
 		goto rq_init_error;
 
-	nand_ops->rq = blk_mq_init_queue(nand_ops->tag_set);
-	if (IS_ERR(nand_ops->rq)) {
-		ret = PTR_ERR(nand_ops->rq);
-		nand_ops->rq = NULL;
-		goto rq_init_error;
-	}
-
-	blk_queue_max_hw_sectors(nand_ops->rq, MTD_RW_SECTORS);
-	blk_queue_max_segments(nand_ops->rq, MTD_RW_SECTORS);
-
-	blk_queue_max_discard_sectors(nand_ops->rq, UINT_MAX >> 9);
-	/* discard_granularity config to one nand page size 32KB*/
-	nand_ops->rq->limits.discard_granularity = 64 << 9;
-	nand_ops->rq->queuedata = nand_ops;
-
 	INIT_LIST_HEAD(&nand_ops->devs);
 	kthread_run(nand_gc_thread, (void *)nand_ops, "rknand_gc");
 
@@ -701,7 +697,10 @@ static int nand_blk_register(struct nand_blk_ops *nand_ops)
 				(u64)disk_array[i].offset * 512,
 				(u64)part_size * 512,
 				(u64)disk_array[i].size / 2048);
-			nand_add_dev(nand_ops, &disk_array[i]);
+			ret = nand_add_dev(nand_ops, &disk_array[i]);
+			if (ret)
+				pr_err("failed to add partition %s: %d\n",
+				       disk_array[i].name, ret);
 		}
 	}
 
@@ -747,7 +746,6 @@ static void nand_blk_unregister(struct nand_blk_ops *nand_ops)
 
 		nand_remove_dev(dev);
 	}
-	blk_mq_destroy_queue(nand_ops->rq);
 	blk_mq_free_tag_set(nand_ops->tag_set);
 	kfree(nand_ops->tag_set);
 	nand_ops->tag_set = NULL;
