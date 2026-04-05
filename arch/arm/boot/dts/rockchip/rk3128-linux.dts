@@ -682,6 +682,10 @@
 	rockchip,thermal-zone = "soc-thermal";
 };
 
+&rng {
+	status = "okay";
+};
+
 &u2phy {
 	status = "okay";
 
