@@ -648,6 +648,17 @@
 	vref-supply = <&vccadc_ref>;
 };
 
+&sdmmc {
+	/*
+	 * This TV box only works reliably with SDMMC in PIO mode.
+	 * Remove the inherited DMA bindings in the base DT so bootloader
+	 * overlays do not need property deletion support.
+	 */
+	/delete-property/ dmas;
+	/delete-property/ dma-names;
+	status = "disabled";
+};
+
 &sdio {
 	max-frequency = <37500000>;
 	cap-sd-highspeed;
