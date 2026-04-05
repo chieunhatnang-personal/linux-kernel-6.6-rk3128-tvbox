@@ -45,8 +45,11 @@
 #endif
 #include <linux/soc/rockchip/rk_vendor_storage.h>
 #include <linux/device.h>
+#include <linux/device/bus.h>
 
+#include "../../drivers/mmc/core/core.h"
 #include "../../drivers/mmc/core/pwrseq.h"
+#include "../../drivers/mmc/host/dw_mmc.h"
 #include <linux/gpio/consumer.h>
 #include "../../drivers/gpio/gpiolib.h"
 #include "rfkill.h"
@@ -62,6 +65,8 @@
 struct rfkill_wlan_data {
 	struct rksdmmc_gpio_wifi_moudle *pdata;
 	struct wake_lock wlan_irq_wl;
+	struct device_node *wifi_sdio_host_node;
+	struct mmc_host *wifi_sdio_host;
 };
 
 static struct rfkill_wlan_data *g_rfkill = NULL;
@@ -70,6 +75,39 @@ static int wifi_bt_vbat_state;
 static int wifi_power_state;
 
 static char wifi_chip_type_string[64];
+
+static struct mmc_host *rfkill_wlan_get_sdio_host(void)
+{
+	struct rfkill_wlan_data *mrfkill = g_rfkill;
+	struct device *dev;
+	struct platform_device *pdev;
+	struct dw_mci *host;
+
+	if (!mrfkill || !mrfkill->wifi_sdio_host_node)
+		return NULL;
+
+	if (mrfkill->wifi_sdio_host)
+		return mrfkill->wifi_sdio_host;
+
+	dev = bus_find_device_by_of_node(&platform_bus_type,
+					 mrfkill->wifi_sdio_host_node);
+	if (!dev)
+		return NULL;
+
+	pdev = to_platform_device(dev);
+	host = platform_get_drvdata(pdev);
+	if (!host || !host->slot || !host->slot->mmc) {
+		put_device(dev);
+		return NULL;
+	}
+
+	mrfkill->wifi_sdio_host = host->slot->mmc;
+	LOG("%s: resolved wifi SDIO host %s\n", __func__,
+	    mmc_hostname(mrfkill->wifi_sdio_host));
+	put_device(dev);
+
+	return mrfkill->wifi_sdio_host;
+}
 /***********************************************************
  * 
  * Broadcom Wifi Static Memory
@@ -231,6 +269,7 @@ int rockchip_wifi_power(int on)
 	struct rfkill_wlan_data *mrfkill = g_rfkill;
 	struct rksdmmc_gpio *poweron, *reset;
 	struct regulator *ldo = NULL;
+	struct mmc_host *sdio_host;
 	int bt_power = 0;
 	bool toggle = false;
 
@@ -240,6 +279,12 @@ int rockchip_wifi_power(int on)
 		LOG("%s: rfkill-wlan driver has not Successful initialized\n",
 		    __func__);
 		return -1;
+	}
+
+	if (!on) {
+		sdio_host = rfkill_wlan_get_sdio_host();
+		if (sdio_host)
+			mmc_pwrseq_power_off(sdio_host);
 	}
 
 	if (mrfkill->pdata->wifi_power_remain && power_set_time) {
@@ -348,6 +393,33 @@ EXPORT_SYMBOL(rockchip_wifi_power);
  *************************************************************************/
 int rockchip_wifi_set_carddetect(int val)
 {
+	struct mmc_host *host = rfkill_wlan_get_sdio_host();
+
+	if (!host) {
+		LOG("%s: wifi SDIO host isn't ready yet\n", __func__);
+		return -ENODEV;
+	}
+
+	LOG("%s: %s -> %d\n", __func__, mmc_hostname(host), val);
+
+	if (val && (host->caps & MMC_CAP_NONREMOVABLE))
+		host->rescan_entered = 0;
+
+	if (!val && (host->caps & MMC_CAP_NONREMOVABLE) &&
+	    host->bus_ops &&
+	    host->card && mmc_card_sdio(host->card)) {
+		mmc_claim_host(host);
+		host->bus_ops->remove(host);
+		mmc_detach_bus(host);
+		mmc_power_off(host);
+		mmc_release_host(host);
+	} else if (!val && (host->caps & MMC_CAP_NONREMOVABLE) &&
+		   host->bus_ops && host->bus_ops->detect) {
+		host->bus_ops->detect(host);
+	} else if (val) {
+		mmc_detect_change(host, msecs_to_jiffies(20));
+	}
+
 	return 0;
 }
 EXPORT_SYMBOL(rockchip_wifi_set_carddetect);
@@ -819,7 +891,12 @@ static int rfkill_wlan_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	rfkill->pdata = pdata;
+	rfkill->wifi_sdio_host_node =
+		of_parse_phandle(pdev->dev.of_node, "wifi_sdio_host", 0);
 	g_rfkill = rfkill;
+
+	if (!rfkill->wifi_sdio_host_node)
+		LOG("%s: wifi_sdio_host property is missing\n", __func__);
 
 	LOG("%s: init gpio\n", __func__);
 
@@ -860,6 +937,10 @@ static int rfkill_wlan_remove(struct platform_device *pdev)
 	struct rfkill_wlan_data *rfkill = g_rfkill;
 
 	LOG("Enter %s\n", __func__);
+
+	of_node_put(rfkill->wifi_sdio_host_node);
+	rfkill->wifi_sdio_host_node = NULL;
+	rfkill->wifi_sdio_host = NULL;
 
 	wake_lock_destroy(&rfkill->wlan_irq_wl);
 

@@ -54,3 +54,5 @@ config BCMDHD_STATIC_IF
 	bool "Enable wlan1 support"
 	help
 	  default to add wlan1 interface
+
+source "drivers/net/wireless/rockchip_wlan/rkwifi/esp8089/Kconfig"

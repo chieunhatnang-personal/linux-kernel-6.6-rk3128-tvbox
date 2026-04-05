@@ -3,6 +3,7 @@
 # (gwl)
 
 obj-$(CONFIG_AP6XXX) += bcmdhd/
+obj-$(CONFIG_ESP8089) += esp8089/
 
 .PHONY: clean
 

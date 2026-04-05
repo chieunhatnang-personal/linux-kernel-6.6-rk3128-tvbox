@@ -17,6 +17,7 @@
 				compatible = "wlan-platdata";
 				rockchip,grf = <&grf>;
 				wifi_chip_type = "esp8089";
+				wifi_sdio_host = <&sdio>;
 				sdio_vref = <0>;
 				WIFI,poweren-gpios = <&gpio0 RK_PD6 GPIO_ACTIVE_HIGH>;
 				WIFI,host_wake-gpios = <&gpio0 RK_PA2 GPIO_ACTIVE_HIGH>;
@@ -30,6 +31,7 @@
 		__overlay__ {
 			rockchip,no-dmaengine;
 			max-frequency = <37500000>;
+			bus-width = <4>;
 			cap-sd-highspeed;
 			cap-sdio-irq;
 			supports-sdio;
