@@ -21,7 +21,7 @@
 #include <linux/moduleparam.h>
 #include <linux/slab.h>
 #include <linux/proc_fs.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 #include <linux/errno.h>
 #ifdef CONFIG_DEBUG_FS
 #include <linux/debugfs.h>
@@ -29,15 +29,12 @@
 #include "ssv_cmd.h"
 #include "ssv_cfg.h"
 #include <linux/fs.h>
-#include <asm/segment.h>
-#include <asm/uaccess.h>
 #include <linux/buffer_head.h>
 #include <linux/ctype.h>
 MODULE_AUTHOR("iComm Semiconductor Co., Ltd");
 MODULE_DESCRIPTION("Shared library for SSV wireless LAN cards.");
 MODULE_LICENSE("Dual BSD/GPL");
 static char *stacfgpath = NULL;
-EXPORT_SYMBOL(stacfgpath);
 module_param(stacfgpath, charp, 0000);
 MODULE_PARM_DESC(stacfgpath, "Get path of sta cfg");
 char *cfgfirmwarepath = NULL;
@@ -97,7 +94,7 @@ static ssize_t ssv6xxx_dbg_write(struct file *filp, const char __user *buffer,
 }
 size_t read_line(struct file *fp, char *buf, size_t size)
 {
- size_t num_read = 0;
+	ssize_t num_read = 0;
  size_t total_read = 0;
  char *buffer;
  char ch;
@@ -108,12 +105,7 @@ size_t read_line(struct file *fp, char *buf, size_t size)
  }
  buffer = buf;
  for (;;) {
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(2,4,37)
-  if (fp->f_op && fp->f_op->read)
-   num_read = fp->f_op->read(fp, &ch, 1, &fp->f_pos);
-#else
-  num_read = vfs_read(fp, &ch, 1, &fp->f_pos);
-#endif
+  num_read = kernel_read(fp, &ch, 1, &fp->f_pos);
   if (num_read < 0) {
    if (num_read == EINTR)
     continue;
@@ -161,7 +153,6 @@ void sta_cfg_set(char *stacfgpath)
  struct file *fp = (struct file *) NULL;
  const char *cfg_path = stacfgpath;
  char buf[MAX_CHARS_PER_LINE], cfg_cmd[32], cfg_value[32];
- mm_segment_t fs;
  size_t s, read_len = 0, is_cmd_support = 0;
  int i;
  printk("\n*** %s, %s ***\n\n", __func__, stacfgpath ? stacfgpath : "(null)");
@@ -192,10 +183,7 @@ void sta_cfg_set(char *stacfgpath)
  do {
   memset(cfg_cmd, '\0', sizeof(cfg_cmd));
   memset(cfg_value, '\0', sizeof(cfg_value));
-  fs = get_fs();
-  set_fs(get_ds());
   read_len = read_line(fp, buf, MAX_CHARS_PER_LINE);
-  set_fs(fs);
   sscanf(buf, "%s = %s", cfg_cmd, cfg_value);
   if (!ischar(cfg_cmd) || !ischar(cfg_value)) {
    printk("ERORR invalid parameter: %s\n", buf);
@@ -223,6 +211,11 @@ static struct file_operations ssv6xxx_dbg_fops = {
     .open = ssv6xxx_dbg_open,
     .read = ssv6xxx_dbg_read,
     .write = ssv6xxx_dbg_write,
+};
+static const struct proc_ops ssv6xxx_dbg_proc_ops = {
+    .proc_open = ssv6xxx_dbg_open,
+    .proc_read = ssv6xxx_dbg_read,
+    .proc_write = ssv6xxx_dbg_write,
 };
 #if (defined(CONFIG_SSV_SUPPORT_ANDROID)||defined(CONFIG_SSV_BUILD_AS_ONE_KO))
 extern int ssv6xxx_hci_init(void);
@@ -255,7 +248,7 @@ static int __init ssvdevice_init(void)
  procfs = proc_mkdir(DEBUG_DIR_ENTRY, NULL);
  if (!procfs)
   return -ENOMEM;
-    proc_create(DEBUG_CMD_ENTRY, S_IRUGO|S_IWUGO, procfs, &ssv6xxx_dbg_fops);
+    proc_create(DEBUG_CMD_ENTRY, S_IRUGO|S_IWUGO, procfs, &ssv6xxx_dbg_proc_ops);
  sta_cfg_set(stacfgpath);
 #if (defined(CONFIG_SSV_SUPPORT_ANDROID)||defined(CONFIG_SSV_BUILD_AS_ONE_KO))
     {

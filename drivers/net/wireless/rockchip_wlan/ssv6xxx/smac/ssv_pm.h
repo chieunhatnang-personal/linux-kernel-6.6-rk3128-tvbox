@@ -25,12 +25,10 @@ void ssv6xxx_late_resume(struct early_suspend *h);
 void ssv6xxx_early_suspend(void);
 void ssv6xxx_late_resume(void);
 #endif
-#ifdef CONFIG_HAS_WAKELOCK
 void ssv_wakelock_init(struct ssv_softc *sc);
 void ssv_wakelock_destroy(struct ssv_softc *sc);
 void ssv_wake_lock(struct ssv_softc *sc);
 void ssv_wake_timeout(struct ssv_softc *sc, int secs);
 void ssv_wake_unlock(struct ssv_softc *sc);
-#endif
 #endif
 #endif

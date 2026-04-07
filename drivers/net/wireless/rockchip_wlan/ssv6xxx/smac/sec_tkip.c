@@ -362,7 +362,7 @@ static int lib80211_tkip_encrypt(struct sk_buff *skb, int hdr_len, void *priv)
 {
  struct lib80211_tkip_data *tkey = priv;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0)
- SKCIPHER_REQUEST_ON_STACK(req, tkey->tx_tfm_arc4);
+ struct skcipher_request *req;
  int err;
 #else
  struct blkcipher_desc desc = { .tfm = tkey->tx_tfm_arc4 };
@@ -395,11 +395,14 @@ static int lib80211_tkip_encrypt(struct sk_buff *skb, int hdr_len, void *priv)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0)
  crypto_skcipher_setkey(tkey->tx_tfm_arc4, rc4key, 16);
  sg_init_one(&sg, pos, len + 4);
+ req = skcipher_request_alloc(tkey->tx_tfm_arc4, GFP_ATOMIC);
+ if (!req)
+  return -ENOMEM;
  skcipher_request_set_tfm(req, tkey->tx_tfm_arc4);
  skcipher_request_set_callback(req, 0, NULL, NULL);
  skcipher_request_set_crypt(req, &sg, &sg, len + 4, NULL);
  err = crypto_skcipher_encrypt(req);
- skcipher_request_zero(req);
+ skcipher_request_free(req);
  return err;
 #else
  crypto_blkcipher_setkey(tkey->tx_tfm_arc4, rc4key, 16);
@@ -419,7 +422,7 @@ static int lib80211_tkip_decrypt(struct sk_buff *skb, int hdr_len, void *priv)
 {
  struct lib80211_tkip_data *tkey = priv;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0)
- SKCIPHER_REQUEST_ON_STACK(req, tkey->rx_tfm_arc4);
+ struct skcipher_request *req;
  int err;
 #else
  struct blkcipher_desc desc = { .tfm = tkey->rx_tfm_arc4 };
@@ -490,11 +493,14 @@ static int lib80211_tkip_decrypt(struct sk_buff *skb, int hdr_len, void *priv)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0)
  crypto_skcipher_setkey(tkey->rx_tfm_arc4, rc4key, 16);
  sg_init_one(&sg, pos, plen + 4);
+ req = skcipher_request_alloc(tkey->rx_tfm_arc4, GFP_ATOMIC);
+ if (!req)
+  return -ENOMEM;
  skcipher_request_set_tfm(req, tkey->rx_tfm_arc4);
  skcipher_request_set_callback(req, 0, NULL, NULL);
  skcipher_request_set_crypt(req, &sg, &sg, plen + 4, NULL);
  err = crypto_skcipher_decrypt(req);
- skcipher_request_zero(req);
+ skcipher_request_free(req);
  if (err) {
 #else
  crypto_blkcipher_setkey(tkey->rx_tfm_arc4, rc4key, 16);
@@ -537,7 +543,7 @@ static int lib80211_tkip_decrypt(struct sk_buff *skb, int hdr_len, void *priv)
 static int michael_mic(struct crypto_ahash *tfm_michael, u8 * key, u8 * hdr,
          u8 * data, size_t data_len, u8 * mic)
 {
- AHASH_REQUEST_ON_STACK(req, tfm_michael);
+ struct ahash_request *req;
  struct scatterlist sg[2];
  int err;
  if (tfm_michael == NULL) {
@@ -549,11 +555,14 @@ static int michael_mic(struct crypto_ahash *tfm_michael, u8 * key, u8 * hdr,
  sg_set_buf(&sg[1], data, data_len);
  if (crypto_ahash_setkey(tfm_michael, key, 8))
   return -1;
+ req = ahash_request_alloc(tfm_michael, GFP_ATOMIC);
+ if (!req)
+  return -ENOMEM;
  ahash_request_set_tfm(req, tfm_michael);
  ahash_request_set_callback(req, 0, NULL, NULL);
  ahash_request_set_crypt(req, sg, mic, data_len + 16);
  err = crypto_ahash_digest(req);
- ahash_request_zero(req);
+ ahash_request_free(req);
  return err;
 }
 #else

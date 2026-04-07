@@ -823,9 +823,9 @@ void ssv6200_ampdu_tx_operation (u16 tid, struct ieee80211_sta *sta,
     ssv_sta_priv->ampdu_tid[tid].sta = sta;
     ssv_sta_priv->ampdu_tid[tid].agg_num_max = MAX_AGGR_NUM;
 #if 1
-    if (buffer_size > IEEE80211_MAX_AMPDU_BUF)
+    if (buffer_size > IEEE80211_MAX_AMPDU_BUF_HT)
     {
-        buffer_size = IEEE80211_MAX_AMPDU_BUF;
+        buffer_size = IEEE80211_MAX_AMPDU_BUF_HT;
     }
     printk("ssv6200_ampdu_tx_operation:buffer_size=%d\n", buffer_size);
     ssv_sta_priv->ampdu_tid[tid].ssv_baw_size = SSV_AMPDU_WINDOW_SIZE;
@@ -920,7 +920,7 @@ static void ssv6200_ampdu_tx_state_stop_func (
     struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
     u8 *skb_qos_ctl = ieee80211_get_qos_ctl(hdr);
     u8 tid_no = skb_qos_ctl[0] & 0xf;
-    if ((sta->ht_cap.ht_supported == true)
+    if ((sta->deflink.ht_cap.ht_supported == true)
         && (!!(sc->sh->cfg.hw_caps & SSV6200_HW_CAP_AMPDU_TX)))
     {
 #if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,32)

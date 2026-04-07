@@ -282,9 +282,7 @@ int ssv6xxx_read_fw_block(char *buf, int len, void *image)
  int rdlen;
  if (!image)
   return 0;
- rdlen = kernel_read(fp, fp->f_pos, buf, len);
- if (rdlen > 0)
-  fp->f_pos += rdlen;
+ rdlen = kernel_read(fp, buf, len, &fp->f_pos);
  return rdlen;
 }
 void ssv6xxx_close_firmware(void *image)

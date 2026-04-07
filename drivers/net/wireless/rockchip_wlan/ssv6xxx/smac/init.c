@@ -21,7 +21,9 @@
 #include <linux/etherdevice.h>
 #include <linux/version.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0)
+#include <crypto/internal/cipher.h>
 #include <crypto/hash.h>
+#include <crypto/skcipher.h>
 #else
 #include <linux/crypto.h>
 #endif
@@ -449,13 +451,13 @@ void ssv6xxx_watchdog_restart_hw(struct ssv_softc *sc)
 #ifdef CONFIG_SSV_RSSI
 extern struct rssi_res_st rssi_res;
 #endif
-void ssv6200_watchdog_timeout(unsigned long arg)
+void ssv6200_watchdog_timeout(struct timer_list *t)
 {
 #ifdef CONFIG_SSV_RSSI
     static u32 count=0;
     struct rssi_res_st *rssi_tmp0 = NULL, *rssi_tmp1 = NULL;
 #endif
-    struct ssv_softc *sc = (struct ssv_softc *)arg;
+    struct ssv_softc *sc = from_timer(sc, t, watchdog_timeout);
     if(sc->watchdog_flag == WD_BARKING) {
         ssv6xxx_watchdog_restart_hw(sc);
         mod_timer(&sc->watchdog_timeout, jiffies + WATCHDOG_TIMEOUT);
@@ -484,7 +486,7 @@ void ssv6200_watchdog_timeout(unsigned long arg)
 static void ssv6xxx_preload_sw_cipher(void)
 {
 #ifdef USE_LOCAL_CRYPTO
-    struct crypto_blkcipher *tmpblkcipher;
+    struct crypto_skcipher *tmpskcipher;
     struct crypto_cipher *tmpcipher;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,6,0)
     struct crypto_ahash *tmphash;
@@ -492,11 +494,11 @@ static void ssv6xxx_preload_sw_cipher(void)
     struct crypto_hash *tmphash;
 #endif
     printk("Pre-load cipher\n");
-    tmpblkcipher = crypto_alloc_blkcipher("ecb(arc4)", 0, CRYPTO_ALG_ASYNC);
- if (IS_ERR(tmpblkcipher)) {
+    tmpskcipher = crypto_alloc_skcipher("ecb(arc4)", 0, CRYPTO_ALG_ASYNC);
+ if (IS_ERR(tmpskcipher)) {
     printk(" ARC4 cipher allocate fail \n");
  } else {
-    crypto_free_blkcipher(tmpblkcipher);
+    crypto_free_skcipher(tmpskcipher);
     }
  tmpcipher = crypto_alloc_cipher("aes", 0, CRYPTO_ALG_ASYNC);
  if (IS_ERR(tmpcipher)) {
@@ -644,10 +646,8 @@ static int ssv6xxx_init_softc(struct ssv_softc *sc)
     skb_queue_head_init(&sc->rx_skb_q);
     sc->rx_task = kthread_run(ssv6xxx_rx_task, sc, "ssv6xxx_rx_task");
     ssv6xxx_preload_sw_cipher();
-    init_timer(&sc->watchdog_timeout);
+    timer_setup(&sc->watchdog_timeout, ssv6200_watchdog_timeout, 0);
     sc->watchdog_timeout.expires = jiffies + 20*HZ;
-    sc->watchdog_timeout.data = (unsigned long)sc;
-    sc->watchdog_timeout.function = ssv6200_watchdog_timeout;
     init_waitqueue_head(&sc->fw_wait_q);
 #ifdef CONFIG_SSV_RSSI
     INIT_LIST_HEAD(&rssi_res.rssi_list);

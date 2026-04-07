@@ -1080,7 +1080,8 @@ static void ssv6xxx_get_rate(void *priv, struct ieee80211_sta *sta, void *priv_s
         tx_info->flags |= IEEE80211_TX_CTL_NO_CCK_RATE;
     }
     #endif
-    if (rate_control_send_low(sta, priv_sta, txrc))
+#if 0
+    if (rate_control_send_low(sta, txrc))
     {
         int i = 0;
         int total_rates = (sizeof(ssv_11bgn_rate_table) / sizeof(ssv_11bgn_rate_table[0]));
@@ -1116,12 +1117,13 @@ static void ssv6xxx_get_rate(void *priv, struct ieee80211_sta *sta, void *priv_s
             WARN_ON("Failed to find matching low rate.");
         }
     }
+#endif
     if (rc_rate == NULL) {
         if (conf_is_ht(&sc->hw->conf) &&
-                (sta->ht_cap.cap & IEEE80211_HT_CAP_LDPC_CODING))
+                (sta->deflink.ht_cap.cap & IEEE80211_HT_CAP_LDPC_CODING))
             tx_info->flags |= IEEE80211_TX_CTL_LDPC;
         if (conf_is_ht(&sc->hw->conf) &&
-                (sta->ht_cap.cap & IEEE80211_HT_CAP_TX_STBC))
+                (sta->deflink.ht_cap.cap & IEEE80211_HT_CAP_TX_STBC))
             tx_info->flags |= (1 << IEEE80211_TX_CTL_STBC_SHIFT);
         if (sc->sc_flags & SC_OP_FIXED_RATE) {
             rateidx = sc->max_rate_idx;
@@ -1310,7 +1312,7 @@ static void ssv6xxx_rate_update_rc_type(void *priv, struct ieee80211_supported_b
     if(sc->cur_channel->hw_value == 14)
     {
         printk("[RC init ]Channel 14 support\n");
-        if((sta->supp_rates[sband->band] & (~0xfL)) == 0x0)
+        if((sta->deflink.supp_rates[sband->band] & (~0xfL)) == 0x0)
         {
             printk("[RC init ]B only mode\n");
             rc_sta->rc_type = RC_TYPE_B_ONLY;
@@ -1323,19 +1325,19 @@ static void ssv6xxx_rate_update_rc_type(void *priv, struct ieee80211_supported_b
     }
     else
 #endif
-    if (sta->ht_cap.ht_supported == true) {
+    if (sta->deflink.ht_cap.ht_supported == true) {
         printk("[RC init ]HT support wsid\n");
         for (i = 0; i < SSV_HT_RATE_MAX; i++) {
-            if (sta->ht_cap.mcs.rx_mask[i/MCS_GROUP_RATES] & (1<<(i%MCS_GROUP_RATES)))
+            if (sta->deflink.ht_cap.mcs.rx_mask[i/MCS_GROUP_RATES] & (1<<(i%MCS_GROUP_RATES)))
                 ht_supp_rates |= BIT(i);
         }
         rc_sta->ht_supp_rates = ht_supp_rates;
-        if (sta->ht_cap.cap & IEEE80211_HT_CAP_GRN_FLD)
+        if (sta->deflink.ht_cap.cap & IEEE80211_HT_CAP_GRN_FLD)
         {
             rc_sta->rc_type = RC_TYPE_HT_GF;
             rc_sta->ht_rc_type = RC_TYPE_HT_GF;
         }
-        else if (sta->ht_cap.cap & IEEE80211_HT_CAP_SGI_20)
+        else if (sta->deflink.ht_cap.cap & IEEE80211_HT_CAP_SGI_20)
         {
             rc_sta->rc_type = RC_TYPE_SGI_20;
             rc_sta->ht_rc_type = RC_TYPE_HT_SGI_20;
@@ -1348,7 +1350,7 @@ static void ssv6xxx_rate_update_rc_type(void *priv, struct ieee80211_supported_b
     }
     else
     {
-        if((sta->supp_rates[sband->band] & (~0xfL)) == 0x0){
+        if((sta->deflink.supp_rates[sband->band] & (~0xfL)) == 0x0){
             rc_sta->rc_type = RC_TYPE_B_ONLY;
             printk("[RC init ]B only mode\n");
         }
@@ -1375,7 +1377,7 @@ static void ssv6xxx_rate_update_rc_type(void *priv, struct ieee80211_supported_b
 #endif
     if((rc_sta->rc_type != RC_TYPE_B_ONLY) && (rc_sta->rc_type != RC_TYPE_LEGACY_GB))
     {
-        if ((sta->ht_cap.ht_supported) && (sh->cfg.hw_caps & SSV6200_HW_CAP_AMPDU_TX))
+        if ((sta->deflink.ht_cap.ht_supported) && (sh->cfg.hw_caps & SSV6200_HW_CAP_AMPDU_TX))
         {
             rc_sta->is_ht = 1;
             ssv62xx_ht_rc_caps(ssv6xxx_rc_rate_set, rc_sta);
@@ -1388,16 +1390,16 @@ static void ssv6xxx_rate_update_rc_type(void *priv, struct ieee80211_supported_b
         {
             if(rc_sta->rc_num_rate == 12)
             {
-                rc_sta->rc_supp_rates = sta->supp_rates[sband->band] & 0xfL;
+                rc_sta->rc_supp_rates = sta->deflink.supp_rates[sband->band] & 0xfL;
                 rc_sta->rc_supp_rates |= (ht_supp_rates << 4);
             }
             else
                 rc_sta->rc_supp_rates = ht_supp_rates;
         }
         else if(rc_sta->rc_type == RC_TYPE_LEGACY_GB)
-            rc_sta->rc_supp_rates = sta->supp_rates[sband->band];
+            rc_sta->rc_supp_rates = sta->deflink.supp_rates[sband->band];
         else if(rc_sta->rc_type == RC_TYPE_B_ONLY)
-            rc_sta->rc_supp_rates = sta->supp_rates[sband->band] & 0xfL;
+            rc_sta->rc_supp_rates = sta->deflink.supp_rates[sband->band] & 0xfL;
         ssv62xx_rc_caps(rc_sta);
     }
 }
@@ -1455,7 +1457,7 @@ static void ssv6xxx_rate_free_sta(void *priv, struct ieee80211_sta *sta,
     struct ssv_sta_rc_info *rc_sta=priv_sta;
     rc_sta->rc_valid = false;
 }
-static void *ssv6xxx_rate_alloc(struct ieee80211_hw *hw, struct dentry *debugfsdir)
+static void *ssv6xxx_rate_alloc(struct ieee80211_hw *hw)
 {
     struct ssv_softc *sc=hw->priv;
     struct ssv_rate_ctrl *ssv_rc;
@@ -1510,13 +1512,13 @@ void ssv6xxx_rc_mac8011_rate_idx(struct ssv_softc *sc,
         hw_rate_idx < 0);
     rc_rate = &ssv_rc->rc_table[hw_rate_idx];
     if (rc_rate->rc_flags & RC_FLAG_HT) {
-        rxs->flag |= RX_FLAG_HT;
+        rxs->encoding = RX_ENC_HT;
         if (rc_rate->rc_flags & RC_FLAG_HT_SGI)
-            rxs->flag |= RX_FLAG_SHORT_GI;
+            rxs->enc_flags |= RX_ENC_FLAG_SHORT_GI;
     }
     else {
         if (rc_rate->rc_flags & RC_FLAG_SHORT_PREAMBLE)
-            rxs->flag |= RX_FLAG_SHORTPRE;
+            rxs->enc_flags |= RX_ENC_FLAG_SHORTPRE;
     }
     rxs->rate_idx = rc_rate->dot11_rate_idx;
 }

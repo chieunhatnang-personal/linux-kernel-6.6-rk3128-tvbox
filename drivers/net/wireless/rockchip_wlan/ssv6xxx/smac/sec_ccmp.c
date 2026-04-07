@@ -26,6 +26,7 @@
 #include <asm/string.h>
 #include <linux/wireless.h>
 #include <linux/ieee80211.h>
+#include <crypto/internal/cipher.h>
 #include <linux/crypto.h>
 #include <linux/module.h>
 #include "sec.h"

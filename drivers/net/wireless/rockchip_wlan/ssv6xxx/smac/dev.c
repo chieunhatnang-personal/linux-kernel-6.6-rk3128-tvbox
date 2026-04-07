@@ -19,6 +19,7 @@
 #include <linux/delay.h>
 #include <linux/version.h>
 #include <linux/time.h>
+#include <linux/timekeeping.h>
 #include <linux/kthread.h>
 #include <linux/ktime.h>
 
@@ -1473,7 +1474,7 @@ static int _set_pairwise_key_tkip_ccmp (struct ssv_softc *sc, struct ssv_vif_pri
         sta_priv->need_sw_decrypt = false;
         if ((cipher == SSV_CIPHER_TKIP)
             || ((!(sc->sh->cfg.hw_caps & SSV6200_HW_CAP_AMPDU_TX) ||
-                (sta_priv->sta_info->sta->ht_cap.ht_supported == false))
+                (sta_priv->sta_info->sta->deflink.ht_cap.ht_supported == false))
                 && (vif_priv->force_sw_encrypt == false)))
         {
             dev_info(sc->dev, "STA %d uses HW encrypter for pairwise.\n", sta_priv->sta_idx);
@@ -3646,7 +3647,7 @@ static void ssv6200_config_filter(struct ieee80211_hw *hw,
 }
 static void ssv6200_bss_info_changed(struct ieee80211_hw *hw,
         struct ieee80211_vif *vif, struct ieee80211_bss_conf *info,
-        u32 changed)
+        u64 changed)
 {
     struct ssv_vif_priv_data *priv_vif = (struct ssv_vif_priv_data *)vif->drv_priv;
     struct ssv_softc *sc = hw->priv;
@@ -3727,7 +3728,7 @@ static void ssv6200_bss_info_changed(struct ieee80211_hw *hw,
     if (vif->type == NL80211_IFTYPE_STATION){
         printk("NL80211_IFTYPE_STATION!!\n");
         if ((changed & BSS_CHANGED_ASSOC) && (vif->p2p == 0)){
-            sc->isAssoc = info->assoc;
+            sc->isAssoc = vif->cfg.assoc;
             if(!sc->isAssoc){
                 sc->channel_center_freq = 0;
                 sc->ps_aid = 0;
@@ -3744,8 +3745,8 @@ static void ssv6200_bss_info_changed(struct ieee80211_hw *hw,
                 curchan = hw->conf.chandef.chan;
                 #endif
                 sc->channel_center_freq = curchan->center_freq;
-                printk(KERN_INFO "!!info->aid = %d\n",info->aid);
-                sc->ps_aid = info->aid;
+                printk(KERN_INFO "!!vif->cfg.aid = %d\n", vif->cfg.aid);
+                sc->ps_aid = vif->cfg.aid;
 #ifdef CONFIG_SSV_MRX_EN3_CTRL
                 SMAC_REG_WRITE(sc->sh, ADR_MRX_FLT_EN3, 0x1000);
 #endif
@@ -3754,7 +3755,7 @@ static void ssv6200_bss_info_changed(struct ieee80211_hw *hw,
 #ifdef CONFIG_SSV_MRX_EN3_CTRL
         else if((changed & BSS_CHANGED_ASSOC) && vif->p2p == 1)
         {
-            if(info->assoc)
+            if(vif->cfg.assoc)
                 SMAC_REG_WRITE(sc->sh, ADR_MRX_FLT_EN3, 0x0400);
             else if(sc->ps_aid != 0)
                 SMAC_REG_WRITE(sc->sh, ADR_MRX_FLT_EN3, 0x1000);
@@ -4173,8 +4174,8 @@ static u64 ssv6200_get_tsf(struct ieee80211_hw *hw,
 static u64 ssv6200_get_systime_us(void)
 {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 39))
-	struct timespec ts;
-	get_monotonic_boottime(&ts);
+		struct timespec64 ts;
+		ktime_get_boottime_ts64(&ts);
 	return ((u64)ts.tv_sec * 1000000) + ts.tv_nsec / 1000;
 #else
 	struct timeval tv;
@@ -4247,7 +4248,7 @@ static int ssv6200_conf_tx(struct ieee80211_hw *hw, u16 queue,
            const struct ieee80211_tx_queue_params *params)
 #else
 static int ssv6200_conf_tx(struct ieee80211_hw *hw,
-                             struct ieee80211_vif *vif, u16 queue,
+                             struct ieee80211_vif *vif, unsigned int link_id, u16 queue,
                              const struct ieee80211_tx_queue_params *params)
 #endif
 {

@@ -19,6 +19,7 @@
 #include <linux/module.h>
 #include <linux/delay.h>
 #include <linux/jiffies.h>
+#include <linux/timekeeping.h>
 #include <ssv6200.h>
 #include "hctrl.h"
 MODULE_AUTHOR("iComm Semiconductor Co., Ltd");

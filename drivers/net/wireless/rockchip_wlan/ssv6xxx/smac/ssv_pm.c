@@ -96,7 +96,7 @@ void ssv6xxx_late_resume(void)
     {
         if(sc->vif_info[0].vif)
         {
-            if(sc->vif_info[0].vif->bss_conf.assoc)
+            if(sc->vif_info[0].vif->cfg.assoc)
             {
                 printk("sc->vif_info[0].vif->bss_conf.assoc\n");
                 if ((sc->vif_info[0].vif->type == NL80211_IFTYPE_STATION) || (sc->vif_info[0].vif->p2p))
@@ -108,7 +108,7 @@ void ssv6xxx_late_resume(void)
         }
         if(sc->vif_info[1].vif)
         {
-            if(sc->vif_info[1].vif->bss_conf.assoc)
+            if(sc->vif_info[1].vif->cfg.assoc)
             {
                 printk("sc->vif_info[1].vif->bss_conf.assoc\n");
                 if ((sc->vif_info[1].vif->type == NL80211_IFTYPE_STATION) || (sc->vif_info[1].vif->p2p))
@@ -136,21 +136,28 @@ static int ssv_wlan_fb_event_notify(struct notifier_block *self,
 {
         struct fb_event *event = data;
         int blank_mode = *((int *)event->data);
+#ifdef FB_EARLY_EVENT_BLANK
         if (action == FB_EARLY_EVENT_BLANK) {
                 switch (blank_mode) {
                 case FB_BLANK_UNBLANK:
                         break;
                 default:
-      ssv6xxx_early_suspend();
+	     ssv6xxx_early_suspend();
                         break;
                 }
         }
-   else if (action == FB_EVENT_BLANK) {
+	   else if (action == FB_EVENT_BLANK) {
+#else
+	   if (action == FB_EVENT_BLANK) {
+#endif
                 switch (blank_mode) {
                 case FB_BLANK_UNBLANK:
-      ssv6xxx_late_resume();
+	     ssv6xxx_late_resume();
                         break;
                 default:
+#ifndef FB_EARLY_EVENT_BLANK
+	     ssv6xxx_early_suspend();
+#endif
                         break;
                 }
         }
