@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2017 Realtek Corporation.
@@ -356,8 +355,12 @@ static int napi_recv(_adapter *padapter, int budget)
 
 #ifdef CONFIG_RTW_GRO
 		if (pregistrypriv->en_gro) {
-			rtw_napi_gro_receive(&padapter->napi, pskb);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 12, 0)
+			if (rtw_napi_gro_receive(&padapter->napi, pskb) != GRO_DROP)
+				rx_ok = _TRUE;
+#else
 			rx_ok = _TRUE;
+#endif
 			goto next;
 		}
 #endif /* CONFIG_RTW_GRO */
@@ -736,3 +739,4 @@ void rtw_os_read_port(_adapter *padapter, struct recv_buf *precvbuf)
 #endif
 
 }
+

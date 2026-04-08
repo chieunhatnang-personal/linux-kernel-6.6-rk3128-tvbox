@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2017 Realtek Corporation.
@@ -43,6 +42,9 @@
 #endif
 #include <linux/sem.h>
 #include <linux/sched.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+#include <linux/sched/signal.h>
+#endif
 #include <linux/etherdevice.h>
 #include <linux/wireless.h>
 #include <net/iw_handler.h>
@@ -55,10 +57,6 @@
 #include <linux/kthread.h>
 #include <linux/list.h>
 #include <linux/vmalloc.h>
-
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
-	#include <uapi/linux/sched/types.h>
-#endif
 
 #if (LINUX_VERSION_CODE <= KERNEL_VERSION(2, 5, 41))
 	#include <linux/tqueue.h>
@@ -221,6 +219,19 @@ typedef void *timer_hdl_context;
 	#define DMA_BIT_MASK(n) (((n) == 64) ? ~0ULL : ((1ULL<<(n))-1))
 #endif
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 15, 0))
+/* Porting from linux kernel commits 
+48eab831ae8b9f7002a533fa4235eed63ea1f1a3 
+3f6cffb8604b537e3d7ea040d7f4368689638eaf
+adeef3e32146a8d2a73c399dc6f5d76a449131b1
+*/
+static inline void rtw_eth_hw_addr_set(struct net_device *dev, const u8 *addr)
+{
+	memcpy(dev->dev_addr, addr, ETH_ALEN);
+}
+#define eth_hw_addr_set rtw_eth_hw_addr_set
+#endif
+
 typedef unsigned long systime;
 typedef struct tasklet_struct _tasklet;
 
@@ -358,7 +369,11 @@ static inline void timer_hdl(unsigned long cntx)
 #endif
 {
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 16, 0))
+	_timer *ptimer = timer_container_of(ptimer, in_timer, timer);
+#else
 	_timer *ptimer = from_timer(ptimer, in_timer, timer);
+#endif
 #else
 	_timer *ptimer = (_timer *)cntx;
 #endif
@@ -387,7 +402,11 @@ __inline static void _set_timer(_timer *ptimer, u32 delay_time)
 
 __inline static void _cancel_timer(_timer *ptimer, u8 *bcancelled)
 {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0))
+	*bcancelled = timer_delete_sync(&ptimer->timer) == 1 ? 1 : 0;
+#else
 	*bcancelled = del_timer_sync(&ptimer->timer) == 1 ? 1 : 0;
+#endif
 }
 
 static inline void _init_workitem(_workitem *pwork, void *pfunc, void *cntx)

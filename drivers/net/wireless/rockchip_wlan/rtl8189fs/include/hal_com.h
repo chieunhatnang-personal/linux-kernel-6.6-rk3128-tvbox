@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2017 Realtek Corporation.
@@ -466,6 +465,13 @@ void rtw_hal_reqtxrpt(_adapter *padapter, u8 macid);
 
 u8 SetHalDefVar(_adapter *adapter, HAL_DEF_VARIABLE variable, void *value);
 u8 GetHalDefVar(_adapter *adapter, HAL_DEF_VARIABLE variable, void *value);
+
+BOOLEAN
+eqNByte(
+	u8	*str1,
+	u8	*str2,
+	u32	num
+);
 
 u32
 MapCharToHexDigit(

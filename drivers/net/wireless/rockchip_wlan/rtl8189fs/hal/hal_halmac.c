@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2015 - 2019 Realtek Corporation.
@@ -1164,7 +1163,6 @@ int rtw_halmac_init_adapter(struct dvobj_priv *d, struct halmac_platform_api *pf
 	struct halmac_adapter *halmac;
 	struct halmac_api *api;
 	enum halmac_interface intf;
-	enum halmac_intf_phy_platform pltfm = HALMAC_INTF_PHY_PLATFORM_ALL;
 	enum halmac_ret_status status;
 	int err = 0;
 #ifdef CONFIG_SDIO_HCI
@@ -1210,13 +1208,9 @@ int rtw_halmac_init_adapter(struct dvobj_priv *d, struct halmac_platform_api *pf
 		goto deinit;
 	}
 
-#ifdef CONFIG_PLATFORM_RTK1319
-	pltfm = HALMAC_INTF_PHY_PLATFORM_DHC;
-#endif /* CONFIG_PLATFORM_RTK1319 */
-	status = api->halmac_phy_cfg(halmac, pltfm);
+	status = api->halmac_phy_cfg(halmac, HALMAC_INTF_PHY_PLATFORM_ALL);
 	if (status != HALMAC_RET_SUCCESS) {
-		RTW_ERR("%s: halmac_phy_cfg fail! (platform=%d, status=%d)\n",
-			__FUNCTION__, pltfm, status);
+		RTW_ERR("%s: halmac_phy_cfg fail!(status=%d)\n", __FUNCTION__, status);
 		err = -1;
 		goto deinit;
 	}
@@ -2970,7 +2964,7 @@ static int _send_general_info(struct dvobj_priv *d)
 	case HALMAC_RET_NO_DLFW:
 		RTW_WARN("%s: halmac_send_general_info() fail because fw not dl!\n",
 			 __FUNCTION__);
-		fallthrough;
+		/* go through */
 	default:
 		return -1;
 	}

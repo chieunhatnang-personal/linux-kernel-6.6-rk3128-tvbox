@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2017 Realtek Corporation.
@@ -24,7 +23,6 @@
 /* 8188E PKT_BUFF_ACCESS_CTRL value */
 #define TXPKT_BUF_SELECT				0x69
 #define RXPKT_BUF_SELECT				0xA5
-#define TXREPORT_BUF_SELECT			0x7F
 #define DISABLE_TRXPKT_BUF_ACCESS		0x0
 
 #ifndef RTW_HALMAC

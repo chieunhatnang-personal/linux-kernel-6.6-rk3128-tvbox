@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2017 Realtek Corporation.
@@ -19,6 +18,9 @@
 	#include <linux/fs.h>
 #endif
 #include <drv_types.h>
+#ifdef CONFIG_OF
+#include <linux/of.h>
+#endif
 
 
 u8 RTW_WPA_OUI_TYPE[] = { 0x00, 0x50, 0xf2, 1 };
@@ -1543,17 +1545,21 @@ func_exit:
 	return res;
 }
 
-#include <linux/rfkill-wlan.h>
 extern char *rtw_initmac;
 /**
  * rtw_macaddr_cfg - Decide the mac address used
  * @out: buf to store mac address decided
  * @hw_mac_addr: mac address from efuse/epprom
  */
-void rtw_macaddr_cfg(u8 *out, const u8 *hw_mac_addr)
+void rtw_macaddr_cfg(struct device *dev, u8 *out, const u8 *hw_mac_addr)
 {
 #define DEFAULT_RANDOM_MACADDR 1
 	u8 mac[ETH_ALEN];
+#ifdef CONFIG_OF
+	struct device_node *np = dev->of_node;
+	const unsigned char *addr;
+	int len;
+#endif
 
 	if (out == NULL) {
 		rtw_warn_on(1);
@@ -1579,29 +1585,35 @@ void rtw_macaddr_cfg(u8 *out, const u8 *hw_mac_addr)
 	/* Use the mac address stored in the Efuse */
 	if (hw_mac_addr) {
 		_rtw_memcpy(mac, hw_mac_addr, ETH_ALEN);
-	}
-
-	if (!rockchip_wifi_mac_addr(mac)) {
-		printk("rk-rtk get mac address from flash=[%02x:%02x:%02x:%02x:%02x:%02x]\n", mac[0], mac[1],
-				mac[2], mac[3], mac[4], mac[5]);
+		goto err_chk;
 	}
 
 err_chk:
 	if (rtw_check_invalid_mac_address(mac, _TRUE) == _TRUE) {
+#ifdef CONFIG_OF
+		if (np &&
+		    (addr = of_get_property(np, "local-mac-address", &len)) &&
+		    len == ETH_ALEN) {
+			memcpy(mac, addr, ETH_ALEN);
+		} else {
+#endif
 #if DEFAULT_RANDOM_MACADDR
-		RTW_ERR("invalid mac addr:"MAC_FMT", assign random MAC\n", MAC_ARG(mac));
-		*((u32 *)(&mac[2])) = rtw_random32();
-		mac[0] = 0x00;
-		mac[1] = 0xe0;
-		mac[2] = 0x4c;
+			RTW_ERR("invalid mac addr:"MAC_FMT", assign random MAC\n", MAC_ARG(mac));
+			*((u32 *)(&mac[2])) = rtw_random32();
+			mac[0] = 0x00;
+			mac[1] = 0xe0;
+			mac[2] = 0x4c;
 #else
-		RTW_ERR("invalid mac addr:"MAC_FMT", assign default one\n", MAC_ARG(mac));
-		mac[0] = 0x00;
-		mac[1] = 0xe0;
-		mac[2] = 0x4c;
-		mac[3] = 0x87;
-		mac[4] = 0x00;
-		mac[5] = 0x00;
+			RTW_ERR("invalid mac addr:"MAC_FMT", assign default one\n", MAC_ARG(mac));
+			mac[0] = 0x00;
+			mac[1] = 0xe0;
+			mac[2] = 0x4c;
+			mac[3] = 0x87;
+			mac[4] = 0x00;
+			mac[5] = 0x00;
+#endif
+#ifdef CONFIG_OF
+		}
 #endif
 	}
 

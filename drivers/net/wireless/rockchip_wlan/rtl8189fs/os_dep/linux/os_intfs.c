@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2017 Realtek Corporation.
@@ -1478,14 +1477,16 @@ unsigned int rtw_classify8021d(struct sk_buff *skb)
 
 static u16 rtw_select_queue(struct net_device *dev, struct sk_buff *skb
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0)
-	#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
-	, struct net_device *sb_dev
-	#else
-	, void *accel_priv
-	#endif
-	#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0)) && (LINUX_VERSION_CODE < KERNEL_VERSION(5, 2, 0)))
-	, select_queue_fallback_t fallback
-	#endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
+				, struct net_device *sb_dev
+#else
+				, void *accel_priv
+#endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 2, 0)
+				, select_queue_fallback_t fallback
+#endif
+#endif
 #endif
 )
 {
@@ -1812,11 +1813,11 @@ int rtw_os_ndev_register(_adapter *adapter, const char *name)
 	u8 rtnl_lock_needed = rtw_rtnl_lock_needed(dvobj);
 
 #ifdef CONFIG_RTW_NAPI
-	#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
 	netif_napi_add_weight(ndev, &adapter->napi, rtw_recv_napi_poll, RTL_NAPI_WEIGHT);
-	#else
+#else
 	netif_napi_add(ndev, &adapter->napi, rtw_recv_napi_poll, RTL_NAPI_WEIGHT);
-	#endif
+#endif
 #endif /* CONFIG_RTW_NAPI */
 
 #if defined(CONFIG_IOCTL_CFG80211)
@@ -2488,9 +2489,7 @@ u8 rtw_init_drv_sw(_adapter *padapter)
 		struct hal_spec_t *hal_spec = GET_HAL_SPEC(padapter);
 
 		dvobj->macid_ctl.num = rtw_min(hal_spec->macid_num, MACID_NUM_SW_LIMIT);
-		dvobj->macid_ctl.macid_cap = hal_spec->macid_cap;
-		dvobj->macid_ctl.macid_txrpt = hal_spec->macid_txrpt;
-		dvobj->macid_ctl.macid_txrpt_pgsz = hal_spec->macid_txrpt_pgsz;
+
 		dvobj->cam_ctl.sec_cap = hal_spec->sec_cap;
 		dvobj->cam_ctl.num = rtw_min(hal_spec->sec_cam_ent_num, SEC_CAM_ENT_NUM_SW_LIMIT);
 
@@ -2833,7 +2832,7 @@ int _netdev_vir_if_open(struct net_device *pnetdev)
 		rtw_mbid_camid_alloc(padapter, adapter_mac_addr(padapter));
 #endif
 		rtw_init_wifidirect_addrs(padapter, adapter_mac_addr(padapter), adapter_mac_addr(padapter));
-		eth_hw_addr_set(pnetdev, adapter_mac_addr(padapter));
+		_rtw_memcpy(pnetdev->dev_addr, adapter_mac_addr(padapter), ETH_ALEN);
 	}
 #endif /*CONFIG_PLATFORM_INTEL_BYT*/
 
@@ -3037,7 +3036,7 @@ _adapter *rtw_drv_add_vir_if(_adapter *primary_padapter,
 	* If it is 1, the address is locally administered
 	*/
 	mac[0] |= BIT(1);
-	if (padapter->iface_id > IFACE_ID1)
+	if (padapter->iface_id >= IFACE_ID1)
 		mac[4] ^= BIT(padapter->iface_id);
 
 	_rtw_memcpy(adapter_mac_addr(padapter), mac, ETH_ALEN);
@@ -3575,7 +3574,7 @@ int _netdev_open(struct net_device *pnetdev)
 		rtw_mbid_camid_alloc(padapter, adapter_mac_addr(padapter));
 #endif
 		rtw_init_wifidirect_addrs(padapter, adapter_mac_addr(padapter), adapter_mac_addr(padapter));
-		eth_hw_addr_set(pnetdev, adapter_mac_addr(padapter));
+		_rtw_memcpy(pnetdev->dev_addr, adapter_mac_addr(padapter), ETH_ALEN);
 #endif /* CONFIG_PLATFORM_INTEL_BYT */
 
 		rtw_clr_surprise_removed(padapter);
@@ -4140,7 +4139,9 @@ static int route_dump(u32 *gw_addr , int *gw_index)
 	struct msghdr msg;
 	struct iovec iov;
 	struct sockaddr_nl nladdr;
+#ifdef get_fs
 	mm_segment_t oldfs;
+#endif
 	char *pg;
 	int size = 0;
 
@@ -4179,14 +4180,18 @@ static int route_dump(u32 *gw_addr , int *gw_index)
 	msg.msg_controllen = 0;
 	msg.msg_flags = MSG_DONTWAIT;
 
+#ifdef get_fs
 	oldfs = get_fs();
 	set_fs(KERNEL_DS);
+#endif
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0))
 	err = sock_sendmsg(sock, &msg);
 #else
 	err = sock_sendmsg(sock, &msg, sizeof(req));
 #endif
+#ifdef get_fs
 	set_fs(oldfs);
+#endif
 
 	if (err < 0)
 		goto out_sock;
@@ -4211,14 +4216,18 @@ restart:
 		iov_iter_init(&msg.msg_iter, READ, &iov, 1, PAGE_SIZE);
 #endif
 
+#ifdef get_fs
 		oldfs = get_fs();
 		set_fs(KERNEL_DS);
+#endif
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 7, 0))
 		err = sock_recvmsg(sock, &msg, MSG_DONTWAIT);
 #else
 		err = sock_recvmsg(sock, &msg, PAGE_SIZE, MSG_DONTWAIT);
 #endif
+#ifdef get_fs
 		set_fs(oldfs);
+#endif
 
 		if (err < 0)
 			goto out_sock_pg;
@@ -4289,14 +4298,18 @@ done:
 		msg.msg_controllen = 0;
 		msg.msg_flags = MSG_DONTWAIT;
 
+#ifdef get_fs
 		oldfs = get_fs();
 		set_fs(KERNEL_DS);
+#endif
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0))
 		err = sock_sendmsg(sock, &msg);
 #else
 		err = sock_sendmsg(sock, &msg, sizeof(req));
 #endif
+#ifdef get_fs
 		set_fs(oldfs);
+#endif
 
 		if (err > 0)
 			goto restart;

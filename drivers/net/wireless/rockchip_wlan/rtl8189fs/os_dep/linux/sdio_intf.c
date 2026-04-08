@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2017 Realtek Corporation.
@@ -692,6 +691,7 @@ _adapter *rtw_sdio_primary_adapter_init(struct dvobj_priv *dvobj)
 {
 	int status = _FAIL;
 	PADAPTER padapter = NULL;
+	PSDIO_DATA psdio = &dvobj->intf_data;
 
 	padapter = (_adapter *)rtw_zvmalloc(sizeof(*padapter));
 	if (padapter == NULL)
@@ -753,7 +753,7 @@ _adapter *rtw_sdio_primary_adapter_init(struct dvobj_priv *dvobj)
 
 	/* 3 8. get WLan MAC address */
 	/* set mac addr */
-	rtw_macaddr_cfg(adapter_mac_addr(padapter),  get_hal_mac_addr(padapter));
+	rtw_macaddr_cfg(&psdio->func->dev, adapter_mac_addr(padapter),  get_hal_mac_addr(padapter));
 
 #ifdef CONFIG_MI_WITH_MBSSID_CAM
 	rtw_mbid_camid_alloc(padapter, adapter_mac_addr(padapter));
@@ -1174,7 +1174,7 @@ static int rtw_sdio_resume(struct device *dev)
 
 }
 
-static int rtw_drv_entry(void)
+static int __init rtw_drv_entry(void)
 {
 	int ret = 0;
 
@@ -1222,7 +1222,7 @@ exit:
 	return ret;
 }
 
-static void rtw_drv_halt(void)
+static void __exit rtw_drv_halt(void)
 {
 	RTW_PRINT("module exit start\n");
 
@@ -1259,60 +1259,5 @@ int rtw_sdio_set_power(int on)
 }
 #endif /* CONFIG_PLATFORM_INTEL_BYT */
 
-#include "rtw_version.h"
-#include <linux/rfkill-wlan.h>
-extern int get_wifi_chip_type(void);
-extern int rockchip_wifi_power(int on);
-extern int rockchip_wifi_set_carddetect(int val);
-
-int rockchip_wifi_init_module_rtkwifi(void)
-{
-#ifdef CONFIG_WIFI_LOAD_DRIVER_WHEN_KERNEL_BOOTUP
-    int type = get_wifi_chip_type();
-    if (type < WIFI_AP6XXX_SERIES || type == WIFI_ESP8089) return 0;
-#endif
-    printk("\n");
-    printk("=======================================================\n");
-    printk("==== Launching Wi-Fi driver! (Powered by Rockchip) ====\n");
-    printk("=======================================================\n");
-    printk("Realtek 8189FS SDIO WiFi driver (Powered by Rockchip,Ver %s) init.\n", DRIVERVERSION);
-
-    rockchip_wifi_power(1);
-    rockchip_wifi_set_carddetect(1);    
-    
-    return rtw_drv_entry();
-
-}
-
-void rockchip_wifi_exit_module_rtkwifi(void)
-{
-#ifdef CONFIG_WIFI_LOAD_DRIVER_WHEN_KERNEL_BOOTUP
-    int type = get_wifi_chip_type();
-    if (type < WIFI_AP6XXX_SERIES || type == WIFI_ESP8089) return;
-#endif
-    printk("\n");
-    printk("=======================================================\n");
-    printk("==== Dislaunching Wi-Fi driver! (Powered by Rockchip) ====\n");
-    printk("=======================================================\n");
-    printk("Realtek 8189FS SDIO WiFi driver (Powered by Rockchip,Ver %s) init.\n", DRIVERVERSION);
-
-    rtw_drv_halt();
-    
-    rockchip_wifi_set_carddetect(0);
-    rockchip_wifi_power(0);
-
-}
-
-#ifdef CONFIG_WIFI_BUILD_MODULE
-module_init(rockchip_wifi_init_module_rtkwifi);
-module_exit(rockchip_wifi_exit_module_rtkwifi);
-#else
-#ifdef CONFIG_WIFI_LOAD_DRIVER_WHEN_KERNEL_BOOTUP
-late_initcall(rockchip_wifi_init_module_rtkwifi);
-module_exit(rockchip_wifi_exit_module_rtkwifi);
-#else
-EXPORT_SYMBOL(rockchip_wifi_init_module_rtkwifi);
-EXPORT_SYMBOL(rockchip_wifi_exit_module_rtkwifi);
-#endif
-#endif
-
+module_init(rtw_drv_entry);
+module_exit(rtw_drv_halt);

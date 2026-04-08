@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 #define R_0x0 0x0
 #define R_0x00 0x00
 #define R_0x0106 0x0106

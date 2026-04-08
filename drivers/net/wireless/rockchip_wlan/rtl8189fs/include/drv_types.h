@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2017 Realtek Corporation.
@@ -745,9 +744,6 @@ struct rtw_traffic_statistics {
 
 #define SEC_CAP_CHK_BMC	BIT0
 
-#define MACID_DROP BIT0
-#define MACID_DROP_INDIRECT BIT1
-
 #define SEC_STATUS_STA_PK_GK_CONFLICT_DIS_BMC_SEARCH	BIT0
 
 struct sec_cam_bmp {
@@ -828,24 +824,18 @@ struct macid_ctl_t {
 	u8 op_num[H2C_MSR_ROLE_MAX]; /* number of macid having h2c_msr's OPMODE = 1 for specific ROLE */
 
 	struct sta_info *sta[MACID_NUM_SW_LIMIT]; /* corresponding stainfo when macid is not shared */
-	u8 macid_cap;
+
 	/* macid sleep registers */
 	u16 reg_sleep_m0;
-	u16 reg_drop_m0;
 #if (MACID_NUM_SW_LIMIT > 32)
 	u16 reg_sleep_m1;
-	u16 reg_drop_m1;
 #endif
 #if (MACID_NUM_SW_LIMIT > 64)
 	u16 reg_sleep_m2;
-	u16 reg_drop_m2;
 #endif
 #if (MACID_NUM_SW_LIMIT > 96)
 	u16 reg_sleep_m3;
-	u16 reg_drop_m3;
 #endif
-	u16 macid_txrpt;
-	u8 macid_txrpt_pgsz;
 };
 
 /* used for rf_ctl_t.rate_bmp_cck_ofdm */

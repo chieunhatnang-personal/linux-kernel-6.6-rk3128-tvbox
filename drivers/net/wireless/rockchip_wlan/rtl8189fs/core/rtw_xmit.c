@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2019 Realtek Corporation.
@@ -643,7 +642,7 @@ void rtw_update_tx_rate_bmp(struct dvobj_priv *dvobj)
 
 		/* TODO: per rfpath and rate section handling? */
 		if (update_ht_rs == _TRUE || update_vht_rs == _TRUE)
-			rtw_hal_update_txpwr_level(adapter);
+			rtw_hal_set_tx_power_level(dvobj_get_primary_adapter(dvobj), hal_data->current_channel);
 	}
 }
 

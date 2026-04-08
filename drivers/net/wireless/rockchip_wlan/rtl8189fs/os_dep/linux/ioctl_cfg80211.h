@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2017 Realtek Corporation.
@@ -157,7 +156,7 @@ struct rtw_wdev_priv {
 	char ifname_mon[IFNAMSIZ + 1]; /* interface name for monitor interface */
 
 	u8 p2p_enabled;
-	unsigned long probe_resp_ie_update_time;
+	systime probe_resp_ie_update_time;
 
 	u8 provdisc_req_issued;
 

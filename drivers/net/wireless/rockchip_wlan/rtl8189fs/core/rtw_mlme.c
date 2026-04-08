@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2019 Realtek Corporation.
@@ -1309,7 +1308,9 @@ void rtw_surveydone_event_callback(_adapter	*adapter, u8 *pbuf)
 	_irqL  irqL;
 	struct surveydone_event *parm = (struct surveydone_event *)pbuf;
 	struct	mlme_priv	*pmlmepriv = &(adapter->mlmepriv);
+#ifdef CONFIG_RTW_80211R
 	struct mlme_ext_priv	*pmlmeext = &adapter->mlmeextpriv;
+#endif
 
 #ifdef CONFIG_MLME_EXT
 	mlmeext_surveydone_event_callback(adapter);
@@ -1329,9 +1330,6 @@ void rtw_surveydone_event_callback(_adapter	*adapter, u8 *pbuf)
 		RTW_INFO(FUNC_ADPT_FMT" fw_state:0x%x\n", FUNC_ADPT_ARG(adapter), get_fwstate(pmlmepriv));
 		/* rtw_warn_on(1); */
 	}
-
-	if (pmlmeext->scan_abort == _TRUE)
-		pmlmeext->scan_abort = _FALSE;
 
 	_clr_fwstate_(pmlmepriv, _FW_UNDER_SURVEY);
 	_exit_critical_bh(&pmlmepriv->lock, &irqL);
@@ -2814,7 +2812,6 @@ void rtw_sta_mstatus_disc_rpt(_adapter *adapter, u8 mac_id)
 			, mac_id, id_is_shared ? " shared" : "");
 
 		if (!id_is_shared) {
-			rtw_hal_macid_drop(adapter, mac_id);
 			rtw_hal_set_FwMediaStatusRpt_single_cmd(adapter, 0, 0, 0, 0, mac_id);
 			/*
 			 * For safety, prevent from keeping macid sleep.
@@ -3180,8 +3177,10 @@ void rtw_drv_scan_by_self(_adapter *padapter, u8 reason)
 			RTW_INFO(FUNC_ADPT_FMT" need to roam, don't care BusyTraffic\n", FUNC_ADPT_ARG(padapter));
 		else
 		#endif
+		{
 			RTW_INFO(FUNC_ADPT_FMT" exit BusyTraffic\n", FUNC_ADPT_ARG(padapter));
 			goto exit;
+		}
 	}
 	else if (ssc_chk != SS_ALLOW)
 		goto exit;

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2017 Realtek Corporation.
@@ -1019,14 +1018,6 @@ int check_phy_efuse_tx_power_info_valid(_adapter *adapter)
 	u8 valid_5g_path_bmp = 0;
 #endif
 	int result = _FALSE;
-#ifdef CONFIG_MP_INCLUDED
-	struct mp_priv *pmp_priv = &adapter->mppriv;
-
-	if (pmp_priv->efuse_update_file == _TRUE && (rtw_mp_mode_check(adapter))) {
-		RTW_INFO("%s: To use efuse_update_file !!!\n", __func__);
-		return _FALSE;
-	}
-#endif
 
 	for (path = 0; path < MAX_RF_PATH; path++) {
 		u8 ret = _FALSE;
@@ -3670,46 +3661,46 @@ phy_set_tx_power_limit(
 			powerLimit =  ww_lmt_val + 1;
 	}
 
-	if (strncmp(RateSection, "CCK", 3) == 0)
+	if (eqNByte(RateSection, (u8 *)("CCK"), 3))
 		tlrs = TXPWR_LMT_RS_CCK;
-	else if (strncmp(RateSection, "OFDM", 4) == 0)
+	else if (eqNByte(RateSection, (u8 *)("OFDM"), 4))
 		tlrs = TXPWR_LMT_RS_OFDM;
-	else if (strncmp(RateSection, "HT", 2) == 0)
+	else if (eqNByte(RateSection, (u8 *)("HT"), 2))
 		tlrs = TXPWR_LMT_RS_HT;
-	else if (strncmp(RateSection, "VHT", 3) == 0)
+	else if (eqNByte(RateSection, (u8 *)("VHT"), 3))
 		tlrs = TXPWR_LMT_RS_VHT;
 	else {
 		RTW_PRINT("Wrong rate section:%s\n", RateSection);
 		return;
 	}
 
-	if (strncmp(ntx, "1T", 2) == 0)
+	if (eqNByte(ntx, (u8 *)("1T"), 2))
 		ntx_idx = RF_1TX;
-	else if (strncmp(ntx, "2T", 2) == 0)
+	else if (eqNByte(ntx, (u8 *)("2T"), 2))
 		ntx_idx = RF_2TX;
-	else if (strncmp(ntx, "3T", 2) == 0)
+	else if (eqNByte(ntx, (u8 *)("3T"), 2))
 		ntx_idx = RF_3TX;
-	else if (strncmp(ntx, "4T", 2) == 0)
+	else if (eqNByte(ntx, (u8 *)("4T"), 2))
 		ntx_idx = RF_4TX;
 	else {
 		RTW_PRINT("Wrong tx num:%s\n", ntx);
 		return;
 	}
 
-	if (strncmp(Bandwidth, "20M", 3) == 0)
+	if (eqNByte(Bandwidth, (u8 *)("20M"), 3))
 		bandwidth = CHANNEL_WIDTH_20;
-	else if (strncmp(Bandwidth, "40M", 3) == 0)
+	else if (eqNByte(Bandwidth, (u8 *)("40M"), 3))
 		bandwidth = CHANNEL_WIDTH_40;
-	else if (strncmp(Bandwidth, "80M", 3) == 0)
+	else if (eqNByte(Bandwidth, (u8 *)("80M"), 3))
 		bandwidth = CHANNEL_WIDTH_80;
-	else if (strncmp(Bandwidth, "160M", 4) == 0)
+	else if (eqNByte(Bandwidth, (u8 *)("160M"), 4))
 		bandwidth = CHANNEL_WIDTH_160;
 	else {
 		RTW_PRINT("unknown bandwidth: %s\n", Bandwidth);
 		return;
 	}
 
-	if (strncmp(Band, "2.4G", 4) == 0) {
+	if (eqNByte(Band, (u8 *)("2.4G"), 4)) {
 		band = BAND_ON_2_4G;
 		channelIndex = phy_GetChannelIndexOfTxPowerLimit(BAND_ON_2_4G, channel);
 
@@ -3726,7 +3717,7 @@ phy_set_tx_power_limit(
 		rtw_txpwr_lmt_add(adapter_to_rfctl(Adapter), Regulation, band, bandwidth, tlrs, ntx_idx, channelIndex, powerLimit);
 	}
 #ifdef CONFIG_IEEE80211_BAND_5GHZ
-	else if (strncmp(Band, "5G", 2) == 0) {
+	else if (eqNByte(Band, (u8 *)("5G"), 2)) {
 		band = BAND_ON_5G;
 		channelIndex = phy_GetChannelIndexOfTxPowerLimit(BAND_ON_5G, channel);
 
@@ -4385,15 +4376,15 @@ phy_ParseBBPgParaFile(
 		if (!IsCommentString(szLine)) {
 			/* Get header info (relative value or exact value) */
 			if (firstLine) {
-				if (strncmp(szLine, "#[v1]", 5) == 0
-					|| strncmp(szLine, "#[v2]", 5) == 0)
+				if (eqNByte(szLine, (u8 *)("#[v1]"), 5)
+					|| eqNByte(szLine, (u8 *)("#[v2]"), 5))
 					pHalData->odmpriv.phy_reg_pg_version = szLine[3] - '0';
 				else {
 					RTW_ERR("The format in PHY_REG_PG are invalid %s\n", szLine);
 					goto exit;
 				}
 
-				if (strncmp(szLine + 5, "[Exact]#", 8) == 0) {
+				if (eqNByte(szLine + 5, (u8 *)("[Exact]#"), 8)) {
 					pHalData->odmpriv.phy_reg_pg_value_type = PHY_REG_PG_EXACT_VALUE;
 					firstLine = _FALSE;
 					continue;
@@ -4406,17 +4397,17 @@ phy_ParseBBPgParaFile(
 			if (pHalData->odmpriv.phy_reg_pg_version > 0) {
 				u32	index = 0, cnt = 0;
 
-				if (strncmp(szLine, "0xffff", 6) == 0)
+				if (eqNByte(szLine, "0xffff", 6))
 					break;
 
-				if (strncmp(szLine, "#[END]#", 7)) {
+				if (!eqNByte("#[END]#", szLine, 7)) {
 					/* load the table label info */
 					if (szLine[0] == '#') {
 						index = 0;
-						if (strncmp(szLine, "#[2.4G]", 7) == 0) {
+						if (eqNByte(szLine, "#[2.4G]" , 7)) {
 							band = BAND_ON_2_4G;
 							index += 8;
-						} else if (strncmp(szLine, "#[5G]", 5) == 0) {
+						} else if (eqNByte(szLine, "#[5G]", 5)) {
 							band = BAND_ON_5G;
 							index += 6;
 						} else {
@@ -5185,7 +5176,7 @@ phy_ParsePowerLimitTableFile(
 			while (szLine[i] == ' ' || szLine[i] == '\t')
 				++i;
 
-			if (strncmp((u8 *)(szLine + i), "START", 5)) {
+			if (!eqNByte((u8 *)(szLine + i), (u8 *)("START"), 5)) {
 				RTW_ERR("Missing \"##   START\" label\n");
 				goto exit;
 			}
@@ -5263,7 +5254,7 @@ phy_ParsePowerLimitTableFile(
 				while (szLine[i] == ' ' || szLine[i] == '\t')
 					++i;
 
-				if (strncmp((u8 *)(szLine + i), "END", 3) == 0) {
+				if (eqNByte((u8 *)(szLine + i), (u8 *)("END"), 3)) {
 					loadingStage = LD_STAGE_TAB_DEFINE;
 					if (regulation) {
 						for (forCnt = 0; forCnt < colNum; ++forCnt) {
