@@ -3157,6 +3157,18 @@ static int ssv6200_start(struct ieee80211_hw *hw)
     struct ssv_hw *sh=sc->sh;
     struct ieee80211_channel *chan;
     mutex_lock(&sc->mutex);
+    chan =
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,7,0)
+        hw->conf.channel;
+#else
+        hw->conf.chandef.chan;
+#endif
+    printk("ssv6200_start: assoc=%d scan=%d offchan=%d hw_chan=%d center=%d req_hw=%d req_freq=%d\n",
+        sc->isAssoc, sc->bScanning,
+        !!(hw->conf.flags & IEEE80211_CONF_OFFCHANNEL),
+        sc->hw_chan, sc->channel_center_freq,
+        chan ? chan->hw_value : -1,
+        chan ? chan->center_freq : -1);
     if (ssv6xxx_init_mac(sc->sh) != 0) {
         printk("Initialize ssv6200 mac fail!!\n");
         ssv6xxx_deinit_mac(sc);
@@ -3532,6 +3544,12 @@ static int ssv6200_config(struct ieee80211_hw *hw, u32 changed)
         #else
         chan = hw->conf.chandef.chan;
         #endif
+        printk("ssv6200_config: changed=0x%x assoc=%d scan=%d offchan=%d hw_chan=%d center=%d req_hw=%d req_freq=%d\n",
+            changed, sc->isAssoc, sc->bScanning,
+            !!(hw->conf.flags & IEEE80211_CONF_OFFCHANNEL),
+            sc->hw_chan, sc->channel_center_freq,
+            chan ? chan->hw_value : -1,
+            chan ? chan->center_freq : -1);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,0,0)
                 {
                     struct ieee80211_channel *curchan = hw->conf.channel;
@@ -3552,6 +3570,19 @@ static int ssv6200_config(struct ieee80211_hw *hw, u32 changed)
 #endif
         if (hw->conf.flags & IEEE80211_CONF_OFFCHANNEL)
         {
+            /*
+             * On 6.6/mac80211, background scan work is more aggressive than on
+             * the original 4.4 stack. This chipset/driver combination is not
+             * stable when it pauses TX and retunes off-channel while already
+             * associated, so keep the current channel and skip the off-channel
+             * switch in that case.
+             */
+            if (sc->isAssoc) {
+                dev_dbg(sc->dev,
+                    "Skip off-channel switch to %d while associated\n",
+                    chan->hw_value);
+                goto out;
+            }
             if ( (sc->ap_vif == NULL)
                 || list_empty(&((struct ssv_vif_priv_data *)sc->ap_vif->drv_priv)->sta_list))
             {
@@ -3583,9 +3614,7 @@ static int ssv6200_config(struct ieee80211_hw *hw, u32 changed)
             }
         }
     }
-#ifdef CONFIG_P2P_NOA
 out:
-#endif
     mutex_unlock(&sc->mutex);
     return ret;
 }
@@ -3722,8 +3751,8 @@ static void ssv6200_bss_info_changed(struct ieee80211_hw *hw,
     }
     if (changed & BSS_CHANGED_BASIC_RATES)
     {
-        printk("ssv6xxx_rc_update_basic_rate!!\n");
-        ssv6xxx_rc_update_basic_rate(sc, info->basic_rates);
+        printk("ssv6xxx_rc_update_basic_rate skipped: basic_rates=0x%x assoc=%d scan=%d\n",
+            info->basic_rates, sc->isAssoc, sc->bScanning);
     }
     if (vif->type == NL80211_IFTYPE_STATION){
         printk("NL80211_IFTYPE_STATION!!\n");
@@ -4184,8 +4213,6 @@ static u64 ssv6200_get_systime_us(void)
 #endif
 }
 
-static u32 pre_11b_cca_control;
-static u32 pre_11b_cca_1;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,19,0)
 static void ssv6200_sw_scan_start(struct ieee80211_hw *hw,
          struct ieee80211_vif *vif, const u8 *mac_addr)
@@ -4196,10 +4223,11 @@ static void ssv6200_sw_scan_start(struct ieee80211_hw *hw)
 //#if LINUX_VERSION_CODE < KERNEL_VERSION(3,0,0)
     ((struct ssv_softc *)(hw->priv))->bScanning = true;
 //#endif
- SMAC_REG_READ(((struct ssv_softc *)(hw->priv))->sh, ADR_RX_11B_CCA_CONTROL, &pre_11b_cca_control);
-    SMAC_REG_WRITE(((struct ssv_softc *)(hw->priv))->sh, ADR_RX_11B_CCA_CONTROL, 0x0);
- SMAC_REG_READ(((struct ssv_softc *)(hw->priv))->sh, ADR_RX_11B_CCA_1, &pre_11b_cca_1);
- SMAC_REG_WRITE(((struct ssv_softc *)(hw->priv))->sh, ADR_RX_11B_CCA_1, RX_11B_CCA_IN_SCAN);
+    /*
+     * The legacy driver rewrites 11b CCA registers here. On RK3128/6.6 this
+     * can wedge SDIO during wpa_supplicant-triggered scans, so keep scanning
+     * state only and leave the PHY registers untouched.
+     */
 #ifdef CONFIG_SSV_MRX_EN3_CTRL
     SMAC_REG_WRITE(((struct ssv_softc *)(hw->priv))->sh, ADR_MRX_FLT_EN3, 0x0400);
 #endif
@@ -4217,8 +4245,6 @@ static void ssv6200_sw_scan_complete(struct ieee80211_hw *hw)
     bool is_p2p_assoc;
 #endif
 	((struct ssv_softc *)(hw->priv))->bScanning = false;
-    SMAC_REG_WRITE(((struct ssv_softc *)(hw->priv))->sh, ADR_RX_11B_CCA_CONTROL, pre_11b_cca_control);
-    SMAC_REG_WRITE(((struct ssv_softc *)(hw->priv))->sh, ADR_RX_11B_CCA_1, pre_11b_cca_1);
 #ifdef CONFIG_SSV_MRX_EN3_CTRL
     is_p2p_assoc = ((struct ssv_softc *)(hw->priv))->vif_info[1].vif->bss_conf.assoc;
     if(((struct ssv_softc *)(hw->priv))->ps_aid != 0 && (!is_p2p_assoc))
@@ -4465,6 +4491,7 @@ struct ieee80211_ops ssv6200_ops =
     .change_interface = ssv6200_change_interface,
     .config = ssv6200_config,
     .configure_filter = ssv6200_config_filter,
+    .wake_tx_queue = ieee80211_handle_wake_tx_queue,
     .bss_info_changed = ssv6200_bss_info_changed,
     .sta_add = ssv6200_sta_add,
     .sta_remove = ssv6200_sta_remove,

@@ -797,6 +797,9 @@ int ssv6xxx_init_mac(struct ssv_hw *sh)
     printk(KERN_INFO "COMPILER DATE %s \n", COMPILERDATE);
     printk(KERN_INFO "COMPILER OS %s \n", COMPILEROS);
     printk(KERN_INFO "COMPILER OS ARCH %s \n", COMPILEROSARCH);
+    printk(KERN_INFO "ssv6xxx_init_mac: assoc=%d scan=%d ps=%d hw_chan=%d center=%d\n",
+        sc->isAssoc, sc->bScanning, sc->ps_status, sc->hw_chan,
+        sc->channel_center_freq);
     SMAC_REG_READ(sh, ADR_IC_TIME_TAG_1, &regval);
     sh->chip_tag = ((u64)regval<<32);
     SMAC_REG_READ(sh, ADR_IC_TIME_TAG_0, &regval);
@@ -836,12 +839,17 @@ int ssv6xxx_init_mac(struct ssv_hw *sh)
     }
     SMAC_REG_SET_BITS(sh, ADR_PHY_EN_1, (0 << RG_PHY_MD_EN_SFT), RG_PHY_MD_EN_MSK);
     SMAC_REG_WRITE(sh, ADR_BRG_SW_RST, 1 << MAC_SW_RST_SFT);
+    printk(KERN_INFO "ssv6xxx_init_mac: wrote BRG_SW_RST\n");
     do
     {
         SMAC_REG_READ(sh, ADR_BRG_SW_RST, & regval);
         i ++;
+        if (i == 1 || i == 10 || i == 100 || i == 1000) {
+            printk(KERN_INFO "ssv6xxx_init_mac: BRG_SW_RST poll %d reg=0x%08x\n",
+                i, regval);
+        }
         if (i >10000){
-            printk("MAC reset fail !!!!\n");
+            printk("MAC reset fail !!!! last_reg=0x%08x\n", regval);
             WARN_ON(1);
             ret = 1;
             goto exit;
@@ -1217,17 +1225,11 @@ static int ssv6xxx_init_hw(struct ssv_hw *sh)
                     ssv6200_rf_tbl[i].data = 0x5E000040;
             }
             break;
-        default:
-            printk("No RF setting\n");
-            while(1){
-                printk("**************\n");
-                printk("* Call Help! *\n");
-                printk("**************\n");
-                WARN_ON(1);
-                msleep(10000);
-            };
-            break;
-    }
+	        default:
+	            printk("No RF setting for chip identity [%08x]\n",
+	                   sh->cfg.chip_identity);
+	            return -ENODEV;
+	    }
     if(sh->cfg.crystal_type == SSV6XXX_IQK_CFG_XTAL_26M)
     {
         init_iqk_cfg.cfg_xtal = SSV6XXX_IQK_CFG_XTAL_26M;

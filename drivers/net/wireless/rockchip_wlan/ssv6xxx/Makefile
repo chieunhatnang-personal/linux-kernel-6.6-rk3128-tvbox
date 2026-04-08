@@ -65,7 +65,7 @@ KERN_SRCS_S := crypto/aes-armv4.S
 KERN_SRCS_S += crypto/sha1-armv4-large.S
 endif
 
-KERN_SRCS += ssv6051-generic-wlan.c
+KERN_SRCS += platforms/rk3128-generic-wlan.c
 
 $(KMODULE_NAME)-y += $(KERN_SRCS_S:.S=.o)
 $(KMODULE_NAME)-y += $(KERN_SRCS:.c=.o)

@@ -1088,6 +1088,7 @@ static const struct wiphy_vendor_command ssv_vendor_cmds [] = {
 			.subcmd = RTK_VENDOR_SCMD_PRIV_STR
 		},
 		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV,
+		.policy = VENDOR_CMD_RAW_DATA,
 		.doit = wl_cfgvendor_priv_string_handler
 	},
 #if defined(GSCAN_SUPPORT) && 0
@@ -1196,6 +1197,7 @@ static const struct wiphy_vendor_command ssv_vendor_cmds [] = {
 			.subcmd = ANDR_WIFI_SUBCMD_GET_FEATURE_SET
 		},
 		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV,
+		.policy = VENDOR_CMD_RAW_DATA,
 		.doit = ssv_cfgvendor_get_feature_set
 	},
 	{
@@ -1204,6 +1206,7 @@ static const struct wiphy_vendor_command ssv_vendor_cmds [] = {
 			.subcmd = ANDR_WIFI_SUBCMD_GET_FEATURE_SET_MATRIX
 		},
 		.flags = WIPHY_VENDOR_CMD_NEED_WDEV | WIPHY_VENDOR_CMD_NEED_NETDEV,
+		.policy = VENDOR_CMD_RAW_DATA,
 		.doit = ssv_cfgvendor_get_feature_set_matrix
 	}
 };
@@ -1251,4 +1254,3 @@ int ssv_cfgvendor_detach(struct wiphy *wiphy)
 	return 0;
 }
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0)) || defined(SSV_VENDOR_EXT_SUPPORT) */
-

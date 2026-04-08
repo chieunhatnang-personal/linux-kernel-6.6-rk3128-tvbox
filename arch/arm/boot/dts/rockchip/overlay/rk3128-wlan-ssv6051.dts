@@ -13,23 +13,18 @@
 	fragment@0 {
 		target-path = "/";
 		__overlay__ {
-			sdio_pwrseq_ssv6051: sdio-pwrseq-ssv6051 {
-				compatible = "mmc-pwrseq-simple";
-				clocks = <&xin32k>;
-				pinctrl-names = "default";
-				pinctrl-0 = <&wifi_enable_h_ssv6051>;
-				reset-gpios = <&gpio0 RK_PD6 GPIO_ACTIVE_LOW>;
-				status = "okay";
-			};
-
 			wireless-wlan {
 				compatible = "wlan-platdata";
 				rockchip,grf = <&grf>;
 				clocks = <&xin32k>;
 				clock-names = "clk_wifi";
 				ref-clock-frequency = <32768>;
+				pinctrl-names = "default";
+				pinctrl-0 = <&wifi_enable_h_ssv6051>;
 				wifi_chip_type = "ssv6051";
+				wifi_sdio_host = <&sdio>;
 				sdio_vref = <1800>;
+				WIFI,poweren-gpios = <&gpio0 RK_PD6 GPIO_ACTIVE_HIGH>;
 				WIFI,host_wake-gpios = <&gpio0 RK_PA2 GPIO_ACTIVE_HIGH>;
 				status = "okay";
 			};
@@ -50,7 +45,6 @@
 	fragment@2 {
 		target = <&sdio>;
 		__overlay__ {
-			mmc-pwrseq = <&sdio_pwrseq_ssv6051>;
 			rockchip,no-dmaengine;
 			max-frequency = <37500000>;
 			bus-width = <4>;
