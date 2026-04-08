@@ -318,16 +318,17 @@ extern void rtw_init_timer(_timer *ptimer, void *padapter, void *pfunc);
 
 __inline static unsigned char _cancel_timer_ex(_timer *ptimer)
 {
+	u8 bcancelled;
+
 #ifdef PLATFORM_LINUX
-	return del_timer_sync(ptimer);
+	_cancel_timer(ptimer, &bcancelled);
+	return bcancelled;
 #endif
 #ifdef PLATFORM_FREEBSD
 	_cancel_timer(ptimer,0);
 	return 0;
 #endif
 #ifdef PLATFORM_WINDOWS
-	u8 bcancelled;
-	
 	_cancel_timer(ptimer, &bcancelled);
 	
 	return bcancelled;
@@ -636,5 +637,4 @@ void rtw_cbuf_free(struct rtw_cbuf *cbuf);
 #endif // !PLATFORM_LINUX
 
 #endif
-
 

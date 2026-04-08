@@ -18,11 +18,27 @@
 #ifdef __KERNEL__
 	#include <linux/if_arp.h>
 	#include <net/ip.h>
-	#include <net/ipx.h>
 	#include <linux/atalk.h>
 	#include <linux/udp.h>
 	#include <linux/if_pppox.h>
 #endif
+
+#define IPX_NODE_LEN 6
+
+struct ipx_address {
+	__be32 net;
+	u8 node[IPX_NODE_LEN];
+	__be16 sock;
+} __packed;
+
+struct ipxhdr {
+	__be16 ipx_checksum;
+	__be16 ipx_pktsize;
+	u8 ipx_tctrl;
+	u8 ipx_type;
+	struct ipx_address ipx_dest;
+	struct ipx_address ipx_source;
+} __packed;
 
 #if 1	/* rtw_wifi_driver */
 	#include <drv_types.h>

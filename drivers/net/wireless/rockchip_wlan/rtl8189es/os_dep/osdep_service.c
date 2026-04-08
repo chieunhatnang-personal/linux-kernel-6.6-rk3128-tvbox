@@ -22,6 +22,7 @@
 #define _OSDEP_SERVICE_C_
 
 #include <drv_types.h>
+#include <linux/kthread.h>
 
 #define RT_TAG	'1178'
 
@@ -1089,7 +1090,7 @@ u32 _rtw_down_sema(_sema *sema)
 inline void thread_exit(_completion *comp)
 {
 #ifdef PLATFORM_LINUX
-	complete_and_exit(comp, 0);
+	kthread_complete_and_exit(comp, 0);
 #endif
 
 #ifdef PLATFORM_FREEBSD
@@ -1941,11 +1942,21 @@ static int readFile(struct file *fp,char *buf,int len)
 { 
 	int rlen=0, sum=0;
 	
-	if (!fp->f_op || !fp->f_op->read) 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0))
+	if (!(fp->f_mode & FMODE_CAN_READ))
+#else
+	if (!fp->f_op || !fp->f_op->read)
+#endif
 		return -EPERM;
 
 	while(sum<len) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+		rlen = kernel_read(fp, buf + sum, len - sum, &fp->f_pos);
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0))
+		rlen = __vfs_read(fp, buf + sum, len - sum, &fp->f_pos);
+#else
 		rlen=fp->f_op->read(fp,buf+sum,len-sum, &fp->f_pos);
+#endif
 		if(rlen>0)
 			sum+=rlen;
 		else if(0 != rlen)
@@ -1962,11 +1973,19 @@ static int writeFile(struct file *fp,char *buf,int len)
 { 
 	int wlen=0, sum=0;
 	
-	if (!fp->f_op || !fp->f_op->write) 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+	if (!(fp->f_mode & FMODE_CAN_WRITE))
+#else
+	if (!fp->f_op || !fp->f_op->write)
+#endif
 		return -EPERM; 
 
 	while(sum<len) {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0))
+		wlen = kernel_write(fp, buf + sum, len - sum, &fp->f_pos);
+#else
 		wlen=fp->f_op->write(fp,buf+sum,len-sum, &fp->f_pos);
+#endif
 		if(wlen>0)
 			sum+=wlen;
 		else if(0 != wlen)
@@ -1988,7 +2007,6 @@ static int isFileReadable(char *path)
 { 
 	struct file *fp;
 	int ret = 0;
-	mm_segment_t oldfs;
 	char buf;
  
 	fp=filp_open(path, O_RDONLY, 0); 
@@ -1996,12 +2014,9 @@ static int isFileReadable(char *path)
 		ret = PTR_ERR(fp);
 	}
 	else {
-		oldfs = get_fs(); set_fs(get_ds());
-		
 		if(1!=readFile(fp, &buf, 1))
 			ret = PTR_ERR(fp);
-		
-		set_fs(oldfs);
+
 		filp_close(fp,NULL);
 	}	
 	return ret;
@@ -2017,16 +2032,13 @@ static int isFileReadable(char *path)
 static int retriveFromFile(char *path, u8* buf, u32 sz)
 {
 	int ret =-1;
-	mm_segment_t oldfs;
 	struct file *fp;
 
 	if(path && buf) {
 		if( 0 == (ret=openFile(&fp,path, O_RDONLY, 0)) ){
 			DBG_871X("%s openFile path:%s fp=%p\n",__FUNCTION__, path ,fp);
 
-			oldfs = get_fs(); set_fs(get_ds());
 			ret=readFile(fp, buf, sz);
-			set_fs(oldfs);
 			closeFile(fp);
 			
 			DBG_871X("%s readFile, ret:%d\n",__FUNCTION__, ret);
@@ -2051,16 +2063,13 @@ static int retriveFromFile(char *path, u8* buf, u32 sz)
 static int storeToFile(char *path, u8* buf, u32 sz)
 {
 	int ret =0;
-	mm_segment_t oldfs;
 	struct file *fp;
 	
 	if(path && buf) {
 		if( 0 == (ret=openFile(&fp, path, O_CREAT|O_WRONLY, 0666)) ) {
 			DBG_871X("%s openFile path:%s fp=%p\n",__FUNCTION__, path ,fp);
 
-			oldfs = get_fs(); set_fs(get_ds());
 			ret=writeFile(fp, buf, sz);
-			set_fs(oldfs);
 			closeFile(fp);
 
 			DBG_871X("%s writeFile, ret:%d\n",__FUNCTION__, ret);
@@ -2239,7 +2248,7 @@ int rtw_change_ifname(_adapter *padapter, const char *ifname)
 
 	rtw_init_netdev_name(pnetdev, ifname);
 
-	_rtw_memcpy(pnetdev->dev_addr, adapter_mac_addr(padapter), ETH_ALEN);
+	eth_hw_addr_set(pnetdev, adapter_mac_addr(padapter));
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,26))
 	if(!rtnl_is_locked())
@@ -2366,7 +2375,7 @@ inline u32 rtw_random32(void)
 {
 #ifdef PLATFORM_LINUX
 	#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,8,0))
-	return prandom_u32();
+	return get_random_u32();
 	#elif (LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,18))
 	u32 random_int;
 	get_random_bytes( &random_int , 4 );
@@ -2524,4 +2533,3 @@ void rtw_cbuf_free(struct rtw_cbuf *cbuf)
 {
 	rtw_mfree((u8*)cbuf, sizeof(*cbuf) + sizeof(void*)*cbuf->size);
 }
-

@@ -2768,7 +2768,7 @@ _func_enter_;
 
 #ifdef CONFIG_IOCTL_CFG80211
 		//indicate disconnect for the case that join_timeout and check_fwstate != FW_LINKED
-		rtw_cfg80211_indicate_disconnect(adapter);
+		rtw_cfg80211_indicate_disconnect(adapter, 0, _FALSE);
 #endif //CONFIG_IOCTL_CFG80211
 
  	}
@@ -4674,4 +4674,3 @@ const char *get_miracast_mode_str(int mode)
 
 	return miracast_mode_str[mode];
 }
-

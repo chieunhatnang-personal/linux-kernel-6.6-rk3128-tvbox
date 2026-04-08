@@ -33,6 +33,10 @@
 #ifdef CONFIG_GSPI_HCI
 #include <hal_gspi.h>
 #endif
+
+/* E-Fuse map size used by debug/ioctl paths. */
+#define EFUSE_MAP_SIZE 512
+
 //
 // <Roger_Notes> For RTL8723 WiFi/BT/GPS multi-function configuration. 2010.10.06.
 //
@@ -620,4 +624,3 @@ typedef struct hal_com_data HAL_DATA_TYPE, *PHAL_DATA_TYPE;
 #endif /*CONFIG_AUTO_CHNL_SEL_NHM*/
 
 #endif //__HAL_DATA_H__
-

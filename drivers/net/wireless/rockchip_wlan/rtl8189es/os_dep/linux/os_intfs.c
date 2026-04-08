@@ -698,12 +698,15 @@ unsigned int rtw_classify8021d(struct sk_buff *skb)
 
  
 static u16 rtw_select_queue(struct net_device *dev, struct sk_buff *skb
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0) 	
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
+				, struct net_device *sb_dev
+#else
 				, void *accel_priv
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0) 
+#endif
+#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0)) && (LINUX_VERSION_CODE < KERNEL_VERSION(5, 2, 0)))
 				, select_queue_fallback_t fallback
 #endif
-
 #endif
 )
 {
@@ -1000,7 +1003,7 @@ int rtw_os_ndev_register(_adapter *adapter, char *name)
 	/* alloc netdev name */
 	rtw_init_netdev_name(ndev, name);
 
-	_rtw_memcpy(ndev->dev_addr, adapter_mac_addr(adapter), ETH_ALEN);
+	eth_hw_addr_set(ndev, adapter_mac_addr(adapter));
 
 	/* Tell the network stack we exist */
 	if (register_netdev(ndev) != 0) {
@@ -2032,7 +2035,7 @@ int _netdev_if2_open(struct net_device *pnetdev)
 
 		_rtw_memcpy(adapter_mac_addr(padapter), mac, ETH_ALEN);
 		rtw_init_wifidirect_addrs(padapter, adapter_mac_addr(padapter), adapter_mac_addr(padapter));
-		_rtw_memcpy(pnetdev->dev_addr, adapter_mac_addr(padapter), ETH_ALEN);
+		eth_hw_addr_set(pnetdev, adapter_mac_addr(padapter));
 	}
 #endif //CONFIG_PLATFORM_INTEL_BYT
 
@@ -2495,7 +2498,7 @@ int _netdev_open(struct net_device *pnetdev)
 #ifdef CONFIG_PLATFORM_INTEL_BYT
 		rtw_macaddr_cfg(adapter_mac_addr(padapter),  get_hal_mac_addr(padapter));
 		rtw_init_wifidirect_addrs(padapter, adapter_mac_addr(padapter), adapter_mac_addr(padapter));
-		_rtw_memcpy(pnetdev->dev_addr, adapter_mac_addr(padapter), ETH_ALEN);
+		eth_hw_addr_set(pnetdev, adapter_mac_addr(padapter));
 #endif //CONFIG_PLATFORM_INTEL_BYT
 
 		rtw_clr_surprise_removed(padapter);
@@ -4341,4 +4344,3 @@ int rtw_disable_gpio_interrupt(struct net_device *netdev, int gpio_num)
 EXPORT_SYMBOL(rtw_disable_gpio_interrupt);
 
 #endif //#ifdef CONFIG_GPIO_API 
-

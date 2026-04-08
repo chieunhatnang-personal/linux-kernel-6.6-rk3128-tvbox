@@ -262,7 +262,7 @@ _func_enter_;
 	netif_carrier_off(adapter->pnetdev); // Do it first for tx broadcast pkt after disconnection issue!
 
 #ifdef CONFIG_IOCTL_CFG80211
-	rtw_cfg80211_indicate_disconnect(adapter);
+	rtw_cfg80211_indicate_disconnect(adapter, 0, _FALSE);
 #endif //CONFIG_IOCTL_CFG80211
 
 	rtw_indicate_wx_disassoc_event(adapter);
@@ -615,4 +615,3 @@ void hostapd_mode_unload(_adapter *padapter)
 
 #endif
 #endif
-

@@ -1094,7 +1094,7 @@ void mgt_dispatcher(_adapter *padapter, union recv_frame *precv_frame)
 				ptable->func = &OnAuth;
 			else
 				ptable->func = &OnAuthClient;
-			//pass through
+			fallthrough;
 		case WIFI_ASSOCREQ:
 		case WIFI_REASSOCREQ:
 			_mgt_dispatcher(padapter, ptable, precv_frame);	
@@ -1220,7 +1220,7 @@ unsigned int OnProbeReq(_adapter *padapter, union recv_frame *precv_frame)
 		&& !rtw_p2p_chk_state(pwdinfo, P2P_STATE_NONE)
 		&& (GET_CFG80211_REPORT_MGMT(adapter_wdev_data(padapter), IEEE80211_STYPE_PROBE_REQ) == _TRUE)
 		 ) {
-		rtw_cfg80211_rx_probe_request(padapter, pframe, len);
+		rtw_cfg80211_rx_probe_request(padapter, precv_frame);
 		return _SUCCESS;
 	}
 #endif /* CONFIG_IOCTL_CFG80211 */
@@ -6468,7 +6468,7 @@ unsigned int on_action_public_p2p(union recv_frame *precv_frame)
 #ifdef CONFIG_IOCTL_CFG80211
 	if(adapter_wdev_data(padapter)->p2p_enabled && pwdinfo->driver_interface == DRIVER_CFG80211)
 	{
-		rtw_cfg80211_rx_p2p_action_public(padapter, pframe, len);
+		rtw_cfg80211_rx_p2p_action_public(padapter, precv_frame);
 	}
 	else
 #endif //CONFIG_IOCTL_CFG80211
@@ -6917,7 +6917,7 @@ unsigned int on_action_public_default(union recv_frame *precv_frame, u8 action)
 
 	#ifdef CONFIG_IOCTL_CFG80211
 	cnt += sprintf((msg+cnt), "%s(token:%u)", action_public_str(action), token);
-	rtw_cfg80211_rx_action(adapter, pframe, frame_len, msg);
+	rtw_cfg80211_rx_action(adapter, precv_frame, msg);
 	#endif
 
 	ret = _SUCCESS;
@@ -7127,7 +7127,7 @@ unsigned int OnAction_p2p(_adapter *padapter, union recv_frame *precv_frame)
 	if (adapter_wdev_data(padapter)->p2p_enabled
 		&& pwdinfo->driver_interface == DRIVER_CFG80211
 		) {
-		rtw_cfg80211_rx_action_p2p(padapter, pframe, len);
+		rtw_cfg80211_rx_action_p2p(padapter, precv_frame);
 		return _SUCCESS;
 	}
 	else
@@ -15931,4 +15931,3 @@ u8 run_in_thread_hdl(_adapter *padapter, u8 *pbuf)
 
 	return H2C_SUCCESS;
 }
-
