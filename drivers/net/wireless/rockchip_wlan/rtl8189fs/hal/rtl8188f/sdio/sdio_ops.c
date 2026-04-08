@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2017 Realtek Corporation.
@@ -975,6 +974,35 @@ void sdio_set_intf_ops(_adapter *padapter, struct _io_ops *pops)
 
 }
 
+static s32 ReadInterrupt8188FSdio(PADAPTER padapter, u32 *phisr)
+{
+	u32 hisr, himr;
+	u8 val8, hisr_len;
+	int i;
+
+	if (phisr == NULL)
+		return _FALSE;
+
+	himr = GET_HAL_DATA(padapter)->sdio_himr;
+
+	/* decide how many bytes need to be read */
+	hisr_len = 0;
+	while (himr) {
+		hisr_len++;
+		himr >>= 8;
+	}
+
+	hisr = 0;
+	for (i = 0; i < hisr_len; i++) {
+		val8 = SdioLocalCmd52Read1Byte(padapter, SDIO_REG_HISR + i);
+		hisr |= (val8 << (8 * i));
+	}
+
+	*phisr = hisr;
+
+	return _TRUE;
+}
+
 /*
  *	Description:
  *		Initialize SDIO Host Interrupt Mask configuration variables for future use.
@@ -1441,12 +1469,12 @@ static void sd_rxhandler(PADAPTER padapter, struct recv_buf *precvbuf)
 #endif
 }
 
-#ifndef SD_INT_HDL_DIS_HIMR_RX_REQ
-#define SD_INT_HDL_DIS_HIMR_RX_REQ 0
+#ifndef CMD52_ACCESS_HISR_RX_REQ_LEN
+#define CMD52_ACCESS_HISR_RX_REQ_LEN 1
 #endif
 
-#ifndef CMD52_ACCESS_HISR_RX_REQ_LEN
-#define CMD52_ACCESS_HISR_RX_REQ_LEN 0
+#ifndef SD_INT_HDL_DIS_HIMR_RX_REQ
+#define SD_INT_HDL_DIS_HIMR_RX_REQ 0
 #endif
 
 #if SD_INT_HDL_DIS_HIMR_RX_REQ
@@ -1475,37 +1503,6 @@ static void restore_himr_8188f_sdio(_adapter *adapter)
 #endif
 }
 #endif /* SD_INT_HDL_DIS_HIMR_RX_REQ */
-
-#if CMD52_ACCESS_HISR_RX_REQ_LEN
-static s32 ReadInterrupt8188FSdio(PADAPTER padapter, u32 *phisr)
-{
-	u32 hisr, himr;
-	u8 val8, hisr_len;
-	int i;
-
-	if (phisr == NULL)
-		return _FALSE;
-
-	himr = GET_HAL_DATA(padapter)->sdio_himr;
-
-	/* decide how many bytes need to be read */
-	hisr_len = 0;
-	while (himr) {
-		hisr_len++;
-		himr >>= 8;
-	}
-
-	hisr = 0;
-	for (i = 0; i < hisr_len; i++) {
-		val8 = SdioLocalCmd52Read1Byte(padapter, SDIO_REG_HISR + i);
-		hisr |= (val8 << (8 * i));
-	}
-
-	*phisr = hisr;
-
-	return _TRUE;
-}
-#endif /* CMD52_ACCESS_HISR_RX_REQ_LEN */
 
 void sd_recv(PADAPTER padapter)
 {

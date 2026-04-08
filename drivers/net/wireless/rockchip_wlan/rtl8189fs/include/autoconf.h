@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2017 Realtek Corporation.
@@ -60,7 +59,7 @@
 	/* #define CONFIG_FIND_BEST_CHANNEL */
 #endif
 
-/* #define CONFIG_P2P */
+#define CONFIG_P2P
 #ifdef CONFIG_P2P
 	/* Added by Albert 20110812 */
 	/* The CONFIG_WFD is for supporting the Wi-Fi display */

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2017 Realtek Corporation.
@@ -1073,8 +1072,8 @@ void *wifi_get_country_code(char *ccode)
 	RTW_INFO("%s\n", __FUNCTION__);
 	if (!ccode)
 		return NULL;
-	//if (wifi_control_data && wifi_control_data->get_country_code)
-	//	return wifi_control_data->get_country_code(ccode);
+	if (wifi_control_data && wifi_control_data->get_country_code)
+		return wifi_control_data->get_country_code(ccode);
 	return NULL;
 }
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 39)) */

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2017 Realtek Corporation.
@@ -385,8 +384,6 @@ struct mp_priv {
 	BOOLEAN mplink_brx;
 	BOOLEAN mplink_btx;
 
-	bool efuse_update_file;
-	char efuse_file_path[128];
 };
 
 typedef struct _IOCMD_STRUCT_ {

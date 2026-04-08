@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2017 Realtek Corporation.
@@ -3242,10 +3241,6 @@ void init_hal_spec_8188f(_adapter *adapter)
 	hal_spec->macid_num = 16;
 	hal_spec->sec_cam_ent_num = 16;
 	hal_spec->sec_cap = 0;
-	hal_spec->macid_cap = MACID_DROP_INDIRECT;
-	hal_spec->macid_txrpt = 0x8100;
-	hal_spec->macid_txrpt_pgsz = 16;
-
 	hal_spec->rfpath_num_2g = 1;
 	hal_spec->rfpath_num_5g = 0;
 	hal_spec->txgi_max = 63;

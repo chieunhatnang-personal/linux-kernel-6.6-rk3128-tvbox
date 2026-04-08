@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2017 Realtek Corporation.
@@ -222,7 +221,7 @@ extern uint rtw_drv_log_level;
 		if (sel == RTW_DBGDUMP)\
 			RTW_PRINT(fmt, ##arg); \
 		else {\
-			_seqdump(sel, fmt, ##arg) /*rtw_warn_on(1)*/; \
+			_seqdump(sel, fmt, ##arg); \
 		} \
 	} while (0)
 
@@ -233,7 +232,7 @@ extern uint rtw_drv_log_level;
 		if (sel == RTW_DBGDUMP)\
 			_RTW_PRINT(fmt, ##arg); \
 		else {\
-			_seqdump(sel, fmt, ##arg) /*rtw_warn_on(1)*/; \
+			_seqdump(sel, fmt, ##arg); \
 		} \
 	} while (0)
 

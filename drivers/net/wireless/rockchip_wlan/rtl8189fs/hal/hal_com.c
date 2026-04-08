@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2017 Realtek Corporation.
@@ -12748,6 +12747,24 @@ GetHalDefVar(_adapter *adapter, HAL_DEF_VARIABLE variable, void *value)
 	return bResult;
 }
 
+
+BOOLEAN
+eqNByte(
+	u8	*str1,
+	u8	*str2,
+	u32	num
+)
+{
+	if (num == 0)
+		return _FALSE;
+	while (num > 0) {
+		num--;
+		if (str1[num] != str2[num])
+			return _FALSE;
+	}
+	return _TRUE;
+}
+
 /*
  *	Description:
  *		Translate a character to hex digit.
@@ -13428,25 +13445,16 @@ u32 Hal_readPGDataFromConfigFile(PADAPTER padapter)
 	HAL_DATA_TYPE *hal_data = GET_HAL_DATA(padapter);
 	u32 ret = _FALSE;
 	u32 maplen = 0;
-#ifdef CONFIG_MP_INCLUDED
-	struct mp_priv *pmp_priv = &padapter->mppriv;
-#endif
 
 	EFUSE_GetEfuseDefinition(padapter, EFUSE_WIFI, TYPE_EFUSE_MAP_LEN , (void *)&maplen, _FALSE);
 
 	if (maplen < 256 || maplen > EEPROM_MAX_SIZE) {
 		RTW_ERR("eFuse length error :%d\n", maplen);
 		return _FALSE;
-	}
-#ifdef CONFIG_MP_INCLUDED
-	if (pmp_priv->efuse_update_file == _TRUE && (rtw_mp_mode_check(padapter))) {
-		RTW_INFO("%s, eFuse read from file :%s\n", __func__, pmp_priv->efuse_file_path);
-		ret = rtw_read_efuse_from_file(pmp_priv->efuse_file_path, hal_data->efuse_eeprom_data, maplen);
-	} else 
-#endif        
-	{	
-		ret = rtw_read_efuse_from_file(EFUSE_MAP_PATH, hal_data->efuse_eeprom_data, maplen);
-	}
+	}	
+
+	ret = rtw_read_efuse_from_file(EFUSE_MAP_PATH, hal_data->efuse_eeprom_data, maplen);
+
 	hal_data->efuse_file_status = ((ret == _FAIL) ? EFUSE_FILE_FAILED : EFUSE_FILE_LOADED);
 
 	if (hal_data->efuse_file_status == EFUSE_FILE_LOADED)
@@ -13454,7 +13462,6 @@ u32 Hal_readPGDataFromConfigFile(PADAPTER padapter)
 
 	return ret;
 }
-
 
 u32 Hal_ReadMACAddrFromFile(PADAPTER padapter, u8 *mac_addr)
 {
@@ -14625,7 +14632,6 @@ void dump_hal_spec(void *sel, _adapter *adapter)
 	int i;
 
 	RTW_PRINT_SEL(sel, "macid_num:%u\n", hal_spec->macid_num);
-	RTW_PRINT_SEL(sel, "macid_cap:%u\n", hal_spec->macid_cap);
 	RTW_PRINT_SEL(sel, "sec_cap:0x%02x\n", hal_spec->sec_cap);
 	RTW_PRINT_SEL(sel, "sec_cam_ent_num:%u\n", hal_spec->sec_cam_ent_num);
 	RTW_PRINT_SEL(sel, "rfpath_num_2g:%u\n", hal_spec->rfpath_num_2g);
@@ -15223,52 +15229,20 @@ u8 phy_get_current_tx_num(
 )
 {
 	u8	tx_num = RF_1TX;
-	PHAL_DATA_TYPE hal = GET_HAL_DATA(pAdapter);
-	ANTENNA_PATH anttx = hal->antenna_tx_path;
 
-	if (rtw_mp_mode_check(pAdapter)) {
-		switch (anttx) {
-		case ANTENNA_A:
-		case ANTENNA_B:
-		case ANTENNA_C:
-		case ANTENNA_D:
-			tx_num = RF_1TX;
-			break;
-		case ANTENNA_AB:
-		case ANTENNA_AC:
-		case ANTENNA_AD:
-		case ANTENNA_BC:
-		case ANTENNA_BD:
-		case ANTENNA_CD:
-			tx_num = RF_2TX;
-			break;
-		case ANTENNA_ABC:
-		case ANTENNA_BCD:
-		case ANTENNA_ABD:
-		case ANTENNA_ACD:
-			tx_num = RF_3TX;
-			break;
-		case ANTENNA_ABCD:
-			tx_num = RF_4TX;
-			break;
-		default:
-			tx_num = RF_1TX;
-			break;
-		}
-	} else {
-		if (IS_1T_RATE(Rate)) {
-		#if defined(CONFIG_RTW_TX_2PATH_EN)
-			tx_num = RF_2TX;
-		#else
-			tx_num = RF_1TX;
-		#endif
-		} else if (IS_2T_RATE(Rate))
-			tx_num = RF_2TX;
-		else if (IS_3T_RATE(Rate))
-			tx_num = RF_3TX;
-		else
-			rtw_warn_on(1);
-	}
+	if (IS_1T_RATE(Rate)) {
+	#if defined(CONFIG_RTW_TX_2PATH_EN)
+		tx_num = RF_2TX;
+	#else
+		tx_num = RF_1TX;
+	#endif
+	} else if (IS_2T_RATE(Rate))
+		tx_num = RF_2TX;
+	else if (IS_3T_RATE(Rate))
+		tx_num = RF_3TX;
+	else
+		rtw_warn_on(1);
+
 	return tx_num;
 }
 #endif

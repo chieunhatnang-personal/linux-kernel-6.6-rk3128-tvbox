@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2017 Realtek Corporation.
@@ -57,7 +56,6 @@ BOOLEAN rtw_file_efuse_IsMasked(PADAPTER pAdapter, u16 Offset, u8 *maskbuf)
 
 	return (result > 0) ? 0 : 1;
 }
-
 BOOLEAN efuse_IsBT_Masked(PADAPTER pAdapter, u16 Offset)
 {
 	PHAL_DATA_TYPE pHalData = GET_HAL_DATA(pAdapter);
@@ -66,7 +64,6 @@ BOOLEAN efuse_IsBT_Masked(PADAPTER pAdapter, u16 Offset)
 		return FALSE;
 
 #ifdef CONFIG_BT_EFUSE_MASK
-#ifdef CONFIG_RTL8822C
 #ifdef CONFIG_USB_HCI
 	if (IS_HARDWARE_TYPE_8822C(pAdapter))
 		return (IS_BT_MASKED(8822C, _MUSB, Offset)) ? TRUE : FALSE;
@@ -79,7 +76,6 @@ BOOLEAN efuse_IsBT_Masked(PADAPTER pAdapter, u16 Offset)
 	if (IS_HARDWARE_TYPE_8822C(pAdapter))
 		return (IS_BT_MASKED(8822C, _MSDIO, Offset)) ? TRUE : FALSE;
 #endif
-#endif /*#ifdef CONFIG_RTL8822C*/
 #endif /* CONFIG_BT_EFUSE_MASK */
 	return FALSE;
 }
@@ -89,20 +85,18 @@ void rtw_bt_efuse_mask_array(PADAPTER pAdapter, u8 *pArray)
 	PHAL_DATA_TYPE pHalData = GET_HAL_DATA(pAdapter);
 
 #ifdef CONFIG_BT_EFUSE_MASK
-#ifdef CONFIG_RTL8822C
 #ifdef CONFIG_USB_HCI
 if (IS_HARDWARE_TYPE_8822CU(pAdapter))
-		GET_BT_MASK_ARRAY(8822C, _MUSB, pArray);
+		GET_MASK_ARRAY(8822C, _MUSB, pArray);
 #endif
 #ifdef CONFIG_PCI_HCI
 	if (IS_HARDWARE_TYPE_8822CE(pAdapter))
-		GET_BT_MASK_ARRAY(8822C, _MPCIE, pArray);
+		GET_MASK_ARRAY(8822C, _MPCIE, pArray);
 #endif
 #ifdef CONFIG_SDIO_HCI
 	if (IS_HARDWARE_TYPE_8822CS(pAdapter))
-		GET_BT_MASK_ARRAY(8822C, _MSDIO, pArray);
+		GET_MASK_ARRAY(8822C, _MSDIO, pArray);
 #endif
-#endif /*#ifdef CONFIG_RTL8822C*/
 #endif /* CONFIG_BT_EFUSE_MASK */
 
 }
@@ -112,7 +106,6 @@ u16 rtw_get_bt_efuse_mask_arraylen(PADAPTER pAdapter)
 	HAL_DATA_TYPE	*pHalData = GET_HAL_DATA(pAdapter);
 
 #ifdef CONFIG_BT_EFUSE_MASK
-#ifdef CONFIG_RTL8822C
 #ifdef CONFIG_USB_HCI
 	if (IS_HARDWARE_TYPE_8822CU(pAdapter))
 		return GET_BT_MASK_ARRAY_LEN(8822C, _MUSB);
@@ -125,7 +118,6 @@ u16 rtw_get_bt_efuse_mask_arraylen(PADAPTER pAdapter)
 	if (IS_HARDWARE_TYPE_8822CS(pAdapter))
 		return GET_BT_MASK_ARRAY_LEN(8822C, _MSDIO);
 #endif
-#endif /*#ifdef CONFIG_RTL8822C*/
 #endif /* CONFIG_BT_EFUSE_MASK */
 
 	return 0;
@@ -133,6 +125,7 @@ u16 rtw_get_bt_efuse_mask_arraylen(PADAPTER pAdapter)
 
 BOOLEAN efuse_IsMasked(PADAPTER pAdapter, u16 Offset)
 {
+	PHAL_DATA_TYPE pHalData = GET_HAL_DATA(pAdapter);
 
 	if (pAdapter->registrypriv.boffefusemask)
 		return FALSE;
@@ -297,6 +290,7 @@ BOOLEAN efuse_IsMasked(PADAPTER pAdapter, u16 Offset)
 
 void rtw_efuse_mask_array(PADAPTER pAdapter, u8 *pArray)
 {
+	PHAL_DATA_TYPE pHalData = GET_HAL_DATA(pAdapter);
 
 #ifdef CONFIG_USB_HCI
 #if defined(CONFIG_RTL8188E)
@@ -608,6 +602,29 @@ static void rtw_mask_map_read(PADAPTER padapter, u16 addr, u16 cnts, u8 *data)
 	}
 }
 
+static void rtw_bt_mask_map_read(PADAPTER padapter, u16 addr, u16 cnts, u8 *data)
+{
+	u16 i = 0;
+
+	if (padapter->registrypriv.boffefusemask == 0) {
+			for (i = 0; i < cnts; i++) {
+				if (padapter->registrypriv.bBTFileMaskEfuse == _TRUE) {
+						if (rtw_file_efuse_IsMasked(padapter, addr + i, btmaskfileBuffer)) /*use BT file efuse mask.*/
+							data[i] = 0xff;
+						else
+							RTW_DBG("data[%x] = %x\n", i, data[i]);
+				} else {
+						if (efuse_IsBT_Masked(padapter, addr + i)) /*use drv internal efuse mask.*/
+							data[i] = 0xff;
+						else
+							RTW_DBG("data[%x] = %x\n", i, data[i]);
+					}
+			}
+	}
+
+}
+
+
 u8 rtw_efuse_mask_map_read(PADAPTER padapter, u16 addr, u16 cnts, u8 *data)
 {
 	u8	ret = _SUCCESS;
@@ -887,13 +904,14 @@ void rtw_efuse_analyze(PADAPTER	padapter, u8 Type, u8 Fake)
 	j = 0;
 
 	for (i = 0; i < mapLen; i++) {
-		if (i % 16 == 0)
+		if (i % 16 == 0) {
 			RTW_PRINT_SEL(RTW_DBGDUMP, "0x%03x: ", i);
 			_RTW_PRINT_SEL(RTW_DBGDUMP, "%02X%s"
 				, pEfuseHal->fakeEfuseInitMap[i]
 				, ((i + 1) % 16 == 0) ? "\n" : (((i + 1) % 8 == 0) ? "	  " : " ")
 			);
 		}
+	}
 	_RTW_PRINT_SEL(RTW_DBGDUMP, "\n");
 
 out_free_buffer:
@@ -1017,7 +1035,7 @@ u8 efuse_bt_GetCurrentSize(PADAPTER adapter, u16 *usesize)
 
 u16 efuse_bt_GetMaxSize(PADAPTER adapter)
 {
-	return EFUSE_BT_REAL_CONTENT_LEN;
+	return EFUSE_BT_REAL_CONTENT_LEN - EFUSE_PROTECT_BYTES_BANK;
 }
 
 void EFUSE_GetEfuseDefinition(PADAPTER adapter, u8 efusetype, u8 type, void *out, BOOLEAN test)
@@ -1065,7 +1083,7 @@ u8 rtw_efuse_access(PADAPTER adapter, u8 write, u16 addr, u16 cnts, u8 *data)
 {
 	struct dvobj_priv *d;
 	u8 *efuse = NULL;
-	u32 size;
+	u32 size, i;
 	int err;
 
 
@@ -1123,7 +1141,7 @@ u8 rtw_efuse_bt_access(PADAPTER adapter, u8 write, u16 addr, u16 cnts, u8 *data)
 {
 	struct dvobj_priv *d;
 	u8 *efuse = NULL;
-	u32 size;
+	u32 size, i;
 	int err = _FAIL;
 
 
@@ -1226,7 +1244,7 @@ u8 rtw_efuse_map_write(PADAPTER adapter, u16 addr, u16 cnts, u8 *data)
 {
 	struct dvobj_priv *d;
 	u8 *efuse = NULL;
-	u32 size;
+	u32 size, i;
 	int err;
 	u8 mask_buf[64] = "";
 	u16 mask_len = sizeof(u8) * rtw_get_efuse_mask_arraylen(adapter);
@@ -1304,29 +1322,6 @@ int Efuse_PgPacketWrite(PADAPTER adapter, u8 offset, u8 word_en, u8 *data, BOOLE
 	return _FALSE;
 }
 
-static void rtw_bt_mask_map_read(PADAPTER padapter, u16 addr, u16 cnts, u8 *data)
-{
-	u16 i = 0;
-
-#ifdef CONFIG_BT_EFUSE_MASK
-	if (padapter->registrypriv.boffefusemask == 0) {
-			for (i = 0; i < cnts; i++) {
-				if (padapter->registrypriv.bBTFileMaskEfuse == _TRUE) {
-						if (rtw_file_efuse_IsMasked(padapter, addr + i, btmaskfileBuffer)) /*use BT file efuse mask.*/
-							data[i] = 0xff;
-						else
-							RTW_INFO("data[%x] = %x\n", i, data[i]);
-				} else {
-						if (efuse_IsBT_Masked(padapter, addr + i)) /*use drv internal efuse mask.*/
-							data[i] = 0xff;
-						else
-							RTW_INFO("data[%x] = %x\n", i, data[i]);
-					}
-			}
-	}
-#endif /*CONFIG_BT_EFUSE_MASK*/
-}
-
 u8 rtw_BT_efuse_map_read(PADAPTER adapter, u16 addr, u16 cnts, u8 *data)
 {
 	hal_ReadEFuse_BT_logic_map(adapter, addr, cnts, data);
@@ -1335,7 +1330,6 @@ u8 rtw_BT_efuse_map_read(PADAPTER adapter, u16 addr, u16 cnts, u8 *data)
 
 	return _SUCCESS;
 }
-
 
 static u16
 hal_EfuseGetCurrentSize_BT(
@@ -1352,6 +1346,7 @@ hal_EfuseGetCurrentSize_BT(
 	u8	hoffset = 0, hworden = 0;
 	u8	efuse_data, word_cnts = 0;
 	u16	retU2 = 0;
+	u8 bContinual = _TRUE;
 
 
 	btusedbytes = fakeBTEfuseUsedBytes;
@@ -1422,28 +1417,6 @@ hal_EfuseGetCurrentSize_BT(
 	return retU2;
 }
 
-#ifdef CONFIG_RTL8822C
-void rtw_pre_bt_efuse(PADAPTER padapter)
-{
-	char pgdata[4] = {0x72, 0x80, 0x14, 0x90}; /*BT 5M PLL*/
-	u8 status = 1;
-	u8 bkmask;
-	BOOLEAN bt_en;
-
-	bkmask = padapter->registrypriv.boffefusemask;
-	padapter->registrypriv.boffefusemask = 1;
-
-	bt_en = rtw_read8(padapter, 0x6A) & BIT2 ? _TRUE : _FALSE;
-	if (IS_HARDWARE_TYPE_8822C(padapter) && bt_en == _TRUE) {
-			status = rtw_BT_efuse_map_write(padapter, 0x1f8, 4, pgdata);
-			RTW_INFO("%s done!!!\n", __FUNCTION__);
-	}
-	if (status == _FAIL)
-		RTW_INFO("%s: fail\n", __FUNCTION__);
-	padapter->registrypriv.boffefusemask = bkmask;
-}
-#endif
-
 u8 rtw_BT_efuse_map_write(PADAPTER adapter, u16 addr, u16 cnts, u8 *data)
 {
 #define RT_ASSERT_RET(expr)									\
@@ -1486,10 +1459,10 @@ u8 rtw_BT_efuse_map_write(PADAPTER adapter, u16 addr, u16 cnts, u8 *data)
 
 	_rtw_memcpy(efuse , map, mapLen);
 	_rtw_memcpy(efuse + addr, data, cnts);
-#ifdef CONFIG_BT_EFUSE_MASK
+
 	if (adapter->registrypriv.boffefusemask == 0) {
 		for (i = 0; i < cnts; i++) {
-			if (adapter->registrypriv.bBTFileMaskEfuse == _TRUE) {
+			if (adapter->registrypriv.bFileMaskEfuse == _TRUE) {
 				if (rtw_file_efuse_IsMasked(adapter, addr + i, btmaskfileBuffer)) /*use file efuse mask. */
 					efuse[addr + i] = map[addr + i];
 			} else {
@@ -1499,7 +1472,6 @@ u8 rtw_BT_efuse_map_write(PADAPTER adapter, u16 addr, u16 cnts, u8 *data)
 			RTW_INFO("%s , efuse[%x] = %x, map = %x\n", __func__, addr + i, efuse[ addr + i], map[addr + i]);
 		}
 	}
-#endif /*CONFIG_BT_EFUSE_MASK*/
 	/* precheck pg efuse data byte*/
 	chk_total_byte = 0;
 	idx = 0;
@@ -1563,9 +1535,6 @@ u8 rtw_BT_efuse_map_write(PADAPTER adapter, u16 addr, u16 cnts, u8 *data)
 		offset++;
 	}
 exit:
-	if (efuse)
-		rtw_mfree(efuse, mapLen);
-	if (map)
 	rtw_mfree(map, mapLen);
 	return ret;
 }
@@ -1579,6 +1548,7 @@ void hal_ReadEFuse_BT_logic_map(
 {
 
 	PHAL_DATA_TYPE	pHalData = GET_HAL_DATA(padapter);
+	PEFUSE_HAL		pEfuseHal = &pHalData->EfuseHal;
 
 	u8	*efuseTbl, *phyefuse;
 	u8	bank;
@@ -1714,6 +1684,8 @@ static u8 hal_EfusePartialWriteCheck(
 	PPGPKT_STRUCT	pTargetPkt,
 	u8				bPseudoTest)
 {
+	PHAL_DATA_TYPE	pHalData = GET_HAL_DATA(padapter);
+	PEFUSE_HAL		pEfuseHal = &pHalData->EfuseHal;
 	u8	bRet = _FALSE;
 	u16	startAddr = 0, efuse_max_available_len = EFUSE_BT_REAL_BANK_CONTENT_LEN, efuse_max = EFUSE_BT_REAL_BANK_CONTENT_LEN;
 	u8	efuse_data = 0;
@@ -1822,6 +1794,7 @@ static u8 hal_EfusePgPacketWrite1ByteHeader(
 	PPGPKT_STRUCT	pTargetPkt,
 	u8				bPseudoTest)
 {
+	u8	bRet = _FALSE;
 	u8	pg_header = 0, tmp_header = 0;
 	u16	efuse_addr = *pAddr;
 	u8	repeatcnt = 0;

@@ -1,4 +1,3 @@
-/* SPDX-License-Identifier: GPL-2.0 */
 /******************************************************************************
  *
  * Copyright(c) 2007 - 2019 Realtek Corporation.
@@ -260,7 +259,7 @@ void rtw_txpwr_init_regd(struct rf_ctl_t *rfctl)
 		);
 		if (rfctl->regd_name)
 			break;
-		fallthrough;
+		__attribute__((__fallthrough__));
 	default:
 		rfctl->regd_name = regd_str(TXPWR_LMT_WW);
 		RTW_PRINT("assign %s for default case\n", regd_str(TXPWR_LMT_WW));
@@ -1367,7 +1366,7 @@ void mgt_dispatcher(_adapter *padapter, union recv_frame *precv_frame)
 			ptable->func = &OnAuth;
 		else
 			ptable->func = &OnAuthClient;
-	fallthrough;
+		__attribute__ ((__fallthrough__));
 	case WIFI_ASSOCREQ:
 	case WIFI_REASSOCREQ:
 		_mgt_dispatcher(padapter, ptable, precv_frame);
@@ -14063,11 +14062,11 @@ u8 disconnect_hdl(_adapter *padapter, unsigned char *pbuf)
 	}
 #endif
 
-	rtw_sta_mstatus_report(padapter);
-	
 	rtw_mlmeext_disconnect(padapter);
 
 	rtw_free_uc_swdec_pending_queue(padapter);
+
+	rtw_sta_mstatus_report(padapter);
 
 	return	H2C_SUCCESS;
 }
@@ -14121,6 +14120,7 @@ static bool scan_abort_hdl(_adapter *adapter)
 				 , ss->channel_idx
 				);
 		}
+		pmlmeext->scan_abort = _FALSE;
 		ret = _TRUE;
 	}
 
@@ -16295,10 +16295,6 @@ u8 set_chplan_hdl(_adapter *padapter, unsigned char *pbuf)
 #ifdef CONFIG_IOCTL_CFG80211
 	rtw_regd_apply_flags(adapter_to_wiphy(padapter));
 #endif
-
-	if (GET_HAL_DATA(padapter)->txpwr_limit_loaded
-		&& rtw_get_hw_init_completed(padapter))
-		rtw_hal_update_txpwr_level(padapter);
 
 	return	H2C_SUCCESS;
 }
