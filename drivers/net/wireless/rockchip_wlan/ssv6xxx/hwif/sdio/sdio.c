@@ -72,6 +72,8 @@ struct ssv6xxx_sdio_glue
 {
     struct device *dev;
     struct platform_device *core;
+    u8 rreg_data[4] __attribute__((aligned(32)));
+    u8 wreg_data[8] __attribute__((aligned(32)));
 #ifdef CONFIG_FW_ALIGNMENT_CHECK
     struct sk_buff *dmaSkb;
 #endif
@@ -147,7 +149,6 @@ static int __must_check ssv6xxx_sdio_read_reg(struct device *child, u32 addr,
     int ret = (-1);
     struct ssv6xxx_sdio_glue *glue = dev_get_drvdata(child->parent);
     struct sdio_func *func ;
-    u8 data[4];
     if ( (wlan_data.is_enabled == false)
         || (glue == NULL)
         || (glue->dev_ready == false))
@@ -156,28 +157,30 @@ static int __must_check ssv6xxx_sdio_read_reg(struct device *child, u32 addr,
     {
         func = dev_to_sdio_func(glue->dev);
         sdio_claim_host(func);
-        data[0] = (addr >> ( 0 )) &0xff;
-        data[1] = (addr >> ( 8 )) &0xff;
-        data[2] = (addr >> ( 16 )) &0xff;
-        data[3] = (addr >> ( 24 )) &0xff;
-        ret = sdio_memcpy_toio(func, glue->regIOPort, data, 4);
-        if (WARN_ON(ret))
+        glue->rreg_data[0] = (addr >> ( 0 )) &0xff;
+        glue->rreg_data[1] = (addr >> ( 8 )) &0xff;
+        glue->rreg_data[2] = (addr >> ( 16 )) &0xff;
+        glue->rreg_data[3] = (addr >> ( 24 )) &0xff;
+        ret = sdio_memcpy_toio(func, glue->regIOPort, glue->rreg_data, 4);
+        if (ret)
         {
-            dev_err(child->parent, "sdio read reg write address failed (%d)\n", ret);
+            dev_err_ratelimited(child->parent,
+                "sdio read reg write address failed (%d)\n", ret);
             goto io_err;
         }
-        ret = sdio_memcpy_fromio(func, data, glue->regIOPort, 4);
-        if (WARN_ON(ret))
+        ret = sdio_memcpy_fromio(func, glue->rreg_data, glue->regIOPort, 4);
+        if (ret)
         {
-            dev_err(child->parent, "sdio read reg from I/O failed (%d)\n",ret);
+            dev_err_ratelimited(child->parent,
+                "sdio read reg from I/O failed (%d)\n", ret);
          goto io_err;
       }
         if(ret == 0)
         {
-            *buf = (data[0]&0xff);
-            *buf = *buf | ((data[1]&0xff)<<( 8 ));
-            *buf = *buf | ((data[2]&0xff)<<( 16 ));
-            *buf = *buf | ((data[3]&0xff)<<( 24 ));
+            *buf = (glue->rreg_data[0]&0xff);
+            *buf = *buf | ((glue->rreg_data[1]&0xff)<<( 8 ));
+            *buf = *buf | ((glue->rreg_data[2]&0xff)<<( 16 ));
+            *buf = *buf | ((glue->rreg_data[3]&0xff)<<( 24 ));
         }
         else
             *buf = 0xffffffff;
@@ -211,7 +214,6 @@ static int __must_check ssv6xxx_sdio_write_reg(struct device *child, u32 addr,
     int ret = (-1);
     struct ssv6xxx_sdio_glue *glue = dev_get_drvdata(child->parent);
     struct sdio_func *func;
-    u8 data[8];
     if ( (wlan_data.is_enabled == false)
         || (glue == NULL)
         || (glue->dev_ready == false))
@@ -221,15 +223,15 @@ static int __must_check ssv6xxx_sdio_write_reg(struct device *child, u32 addr,
         func = dev_to_sdio_func(glue->dev);
         dev_dbg(child->parent, "sdio write reg addr 0x%x, 0x%x\n",addr, buf);
         sdio_claim_host(func);
-        data[0] = (addr >> ( 0 )) &0xff;
-        data[1] = (addr >> ( 8 )) &0xff;
-        data[2] = (addr >> ( 16 )) &0xff;
-        data[3] = (addr >> ( 24 )) &0xff;
-        data[4] = (buf >> ( 0 )) &0xff;
-        data[5] = (buf >> ( 8 )) &0xff;
-        data[6] = (buf >> ( 16 )) &0xff;
-        data[7] = (buf >> ( 24 )) &0xff;
-        ret = sdio_memcpy_toio(func, glue->regIOPort, data, 8);
+        glue->wreg_data[0] = (addr >> ( 0 )) &0xff;
+        glue->wreg_data[1] = (addr >> ( 8 )) &0xff;
+        glue->wreg_data[2] = (addr >> ( 16 )) &0xff;
+        glue->wreg_data[3] = (addr >> ( 24 )) &0xff;
+        glue->wreg_data[4] = (buf >> ( 0 )) &0xff;
+        glue->wreg_data[5] = (buf >> ( 8 )) &0xff;
+        glue->wreg_data[6] = (buf >> ( 16 )) &0xff;
+        glue->wreg_data[7] = (buf >> ( 24 )) &0xff;
+        ret = sdio_memcpy_toio(func, glue->regIOPort, glue->wreg_data, 8);
         sdio_release_host(func);
 #ifdef __x86_64
         udelay(50);
