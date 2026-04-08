@@ -29,7 +29,7 @@ subdir-ccflags-y += -I$(srctree)/$(src)/hal/btc
 
 subdir-ccflags-y += -DCONFIG_LITTLE_ENDIAN
 subdir-ccflags-y += -DCONFIG_IOCTL_CFG80211 -DRTW_USE_CFG80211_STA_EVENT
-subdir-ccflags-y += -DCONFIG_CONCURRENT_MODE
+subdir-ccflags-y += -DCONFIG_IFACE_NUMBER=1
 
 ldflags-y += --strip-debug
 
@@ -94,13 +94,13 @@ CONFIG_RTW_WIFI_HAL = n
 CONFIG_ICMP_VOQ = n
 CONFIG_IP_R_MONITOR = n #arp VOQ and high rate
 ########################## Debug ###########################
-CONFIG_RTW_DEBUG = y
+CONFIG_RTW_DEBUG = n
 # default log level is _DRV_INFO_ = 4,
 # please refer to "How_to_set_driver_debug_log_level.doc" to set the available level.
 CONFIG_RTW_LOG_LEVEL = 4
 
 # enable /proc/net/rtlxxxx/ debug interfaces
-CONFIG_PROC_DEBUG = y
+CONFIG_PROC_DEBUG = n
 
 ######################## Wake On Lan ##########################
 CONFIG_WOWLAN = n
