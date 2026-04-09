@@ -260,7 +260,6 @@ int mali_devfreq_init(struct mali_device *mdev)
 
 	dp = &mdev->devfreq_profile;
 
-	dp->initial_freq = mdev->current_freq;
 	dp->polling_ms = 100;
 	dp->target = mali_devfreq_target;
 	dp->get_dev_status = mali_devfreq_status;
@@ -297,6 +296,8 @@ int mali_devfreq_init(struct mali_device *mdev)
 		mdev->current_voltage = opp_voltage;
 #endif
 	}
+
+	dp->initial_freq = mdev->current_freq;
 
 	of_property_read_u32(np, "upthreshold",
 			     &ondemand_data.upthreshold);
