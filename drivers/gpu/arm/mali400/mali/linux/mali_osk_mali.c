@@ -137,11 +137,14 @@ _mali_osk_errcode_t _mali_osk_resource_initialize(void)
 	}
 
 	for (i = 0; i < MALI_OSK_RESOURCE_WITH_IRQ_NUMBER; i++) {
-		irq = platform_get_irq_byname(mali_platform_device, mali_osk_resource_bank[i].irq_name);
-		if (irq < 0)
+		irq = platform_get_irq_byname_optional(mali_platform_device,
+						       mali_osk_resource_bank[i].irq_name);
+		if (irq < 0) {
 			mali_osk_resource_bank[i].base = MALI_OSK_INVALID_RESOURCE_ADDRESS;
-		else
+			mali_osk_resource_bank[i].irq = -1;
+		} else {
 			mali_osk_resource_bank[i].irq = irq;
+		}
 	}
 
 	for (i = MALI_OSK_RESOURCE_PP_LOCATION_START; i <= MALI_OSK_RESOURCE_PP_LOCATION_END; i++) {
@@ -498,5 +501,4 @@ mali_bool _mali_osk_gpu_secure_mode_is_supported(void)
 {
 	return mali_secure_mode_supported;
 }
-
 

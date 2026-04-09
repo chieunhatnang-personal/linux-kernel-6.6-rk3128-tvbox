@@ -324,8 +324,19 @@
 /delete-node/ &mdio;
 
 &gpu {
-	status = "disabled";
+	status = "okay";
 	mali-supply = <&logic_vdd_log>;
+};
+
+/*
+ * The shared logic PWM rail on this board bottoms out at 1.05V, so keep the
+ * lowest GPU OPP aligned with that floor to avoid rejecting the 200MHz state
+ * during OPP/regulator validation.
+ */
+&gpu_opp_table {
+	opp-200000000 {
+		opp-microvolt = <1050000>;
+	};
 };
 
 &hdmi {

@@ -245,6 +245,9 @@ int mali_devfreq_init(struct mali_device *mdev)
 	struct devfreq_dev_profile *dp;
 	struct dev_pm_opp *opp;
 	unsigned long opp_rate;
+#ifdef CONFIG_REGULATOR
+	unsigned long opp_voltage;
+#endif
 	unsigned int dyn_power_coeff = 0;
 	int err;
 
@@ -266,6 +269,34 @@ int mali_devfreq_init(struct mali_device *mdev)
 
 	if (mali_devfreq_init_freq_table(mdev, dp))
 		return -EFAULT;
+
+	/*
+	 * Align the startup clock with a valid OPP before registering devfreq.
+	 * Otherwise the first transition accounting pass can see a frequency
+	 * that isn't present in the OPP-backed freq_table and emit a warning.
+	 */
+	opp_rate = mdev->current_freq;
+	opp = devfreq_recommended_opp(mdev->dev, &opp_rate, 0);
+	if (!IS_ERR(opp)) {
+#ifdef CONFIG_REGULATOR
+		opp_voltage = dev_pm_opp_get_voltage(opp);
+#endif
+		dev_pm_opp_put(opp);
+
+		if (opp_rate != mdev->current_freq) {
+			err = clk_set_rate(mdev->clock, opp_rate);
+			if (err) {
+				MALI_PRINT_ERROR(("Failed to set initial clock %lu\n",
+						  opp_rate));
+			} else {
+				mdev->current_freq = clk_get_rate(mdev->clock);
+			}
+		}
+
+#ifdef CONFIG_REGULATOR
+		mdev->current_voltage = opp_voltage;
+#endif
+	}
 
 	of_property_read_u32(np, "upthreshold",
 			     &ondemand_data.upthreshold);
