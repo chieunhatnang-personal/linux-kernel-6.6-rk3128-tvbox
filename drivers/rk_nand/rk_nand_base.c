@@ -14,6 +14,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/irq.h>
 #include <linux/interrupt.h>
+#include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/miscdevice.h>
 #include <linux/module.h>
@@ -43,6 +44,7 @@ static int rk_nand_suspend_state;
 static int rk_nand_shutdown_state;
 /*1:flash 2:emmc 4:sdcard0 8:sdcard1*/
 static int rknand_boot_media = 2;
+static unsigned int rknand_bad_nand_level;
 static DECLARE_WAIT_QUEUE_HEAD(rk29_nandc_wait);
 static void rk_nand_iqr_timeout_hack(struct timer_list *unused);
 static DEFINE_TIMER(rk_nand_iqr_timeout, rk_nand_iqr_timeout_hack);
@@ -79,6 +81,106 @@ asm(".global PDE_DATA\n"
     "PDE_DATA = __rknand_PDE_DATA\n"
     ".global usleep_range\n"
     "usleep_range = __rknand_usleep_range\n");
+
+extern u8 g_retryMode;
+extern u8 g_nand_ecc_en;
+extern u16 c_ftl_nand_reserved_blks;
+extern u16 c_ftl_nand_data_blks_per_plane;
+extern u16 c_ftl_nand_blk_pre_plane;
+extern u16 g_gc_free_blk_threshold;
+extern u16 g_gc_merge_free_blk_threshold;
+extern u16 g_page_map_check_enable;
+
+static int __init rknand_bad_nand_setup(char *str)
+{
+	unsigned int level = 1;
+
+	if (str && *str) {
+		if (kstrtouint(str, 0, &level))
+			level = 1;
+	}
+
+	if (level > 2)
+		level = 2;
+
+	rknand_bad_nand_level = level;
+	return 1;
+}
+__setup("bad_nand=", rknand_bad_nand_setup);
+
+int rknand_bad_nand_mode_enabled(void)
+{
+	return rknand_bad_nand_level;
+}
+
+void rknand_apply_bad_nand_policy(void)
+{
+	unsigned int level = rknand_bad_nand_level;
+	u16 old_reserved;
+	u16 old_gc_free;
+	u16 old_gc_merge;
+	u16 old_page_map_check;
+	u8 old_retry_mode;
+	u8 old_ecc_en;
+	u32 target_reserved;
+	u32 max_reserved;
+	u16 target_gc_free;
+	u16 target_gc_merge;
+
+	if (!level)
+		return;
+
+	old_reserved = c_ftl_nand_reserved_blks;
+	old_gc_free = g_gc_free_blk_threshold;
+	old_gc_merge = g_gc_merge_free_blk_threshold;
+	old_page_map_check = g_page_map_check_enable;
+	old_retry_mode = g_retryMode;
+	old_ecc_en = g_nand_ecc_en;
+
+	target_reserved = max_t(u32, old_reserved, level >= 2 ? 64 : 32);
+	if (c_ftl_nand_data_blks_per_plane) {
+		u32 data_target = level >= 2 ?
+			(c_ftl_nand_data_blks_per_plane * 2) / 5 :
+			c_ftl_nand_data_blks_per_plane / 4;
+
+		target_reserved = max(target_reserved, data_target);
+	}
+
+	max_reserved = c_ftl_nand_blk_pre_plane ?: c_ftl_nand_data_blks_per_plane;
+	if (max_reserved > 8)
+		max_reserved = max_t(u32, max_reserved / 2, old_reserved);
+	if (max_reserved)
+		target_reserved = min(target_reserved, max_reserved);
+
+	c_ftl_nand_reserved_blks = target_reserved;
+	target_gc_free = level >= 2 ?
+		max_t(u16, 32, c_ftl_nand_reserved_blks * 3 / 4) :
+		max_t(u16, 8, c_ftl_nand_reserved_blks / 4);
+	target_gc_merge = level >= 2 ?
+		max_t(u16, 64, c_ftl_nand_reserved_blks) :
+		max_t(u16, 16, c_ftl_nand_reserved_blks / 2);
+
+	g_gc_free_blk_threshold = max(old_gc_free, target_gc_free);
+	g_gc_merge_free_blk_threshold = max(old_gc_merge, target_gc_merge);
+	g_page_map_check_enable = max_t(u16, old_page_map_check, 1);
+	g_retryMode = max_t(u8, old_retry_mode, 1);
+	g_nand_ecc_en = max_t(u8, old_ecc_en, 1);
+
+	pr_info("bad_nand=%u: degraded NAND mode enabled\n", level);
+	pr_info("bad_nand=%u: FTL reserved blocks %u -> %u (data/plane=%u blk/plane=%u)\n",
+		level,
+		old_reserved, c_ftl_nand_reserved_blks,
+		c_ftl_nand_data_blks_per_plane, c_ftl_nand_blk_pre_plane);
+	pr_info("bad_nand=%u: FTL gc thresholds free %u -> %u, merge %u -> %u\n",
+		level,
+		old_gc_free, g_gc_free_blk_threshold,
+		old_gc_merge, g_gc_merge_free_blk_threshold);
+	pr_info("bad_nand=%u: FTL retry %u -> %u, ecc %u -> %u, page-map-check %u -> %u\n",
+		level,
+		old_retry_mode, g_retryMode,
+		old_ecc_en, g_nand_ecc_en,
+		old_page_map_check, g_page_map_check_enable);
+}
 
 void *ftl_malloc(int size)
 {
@@ -370,12 +472,25 @@ static int rknand_probe(struct platform_device *pdev)
 	}
 
 	if (!(IS_ERR(g_nandc_info[id].clk))) {
-		clk_set_rate(g_nandc_info[id].clk, 150 * 1000 * 1000);
+		unsigned long target_rate = 150 * 1000 * 1000;
+		char bad_nand_suffix[24] = "";
+
+		if (rknand_bad_nand_level >= 2)
+			target_rate = 25 * 1000 * 1000;
+		else if (rknand_bad_nand_level == 1)
+			target_rate = 50 * 1000 * 1000;
+
+		if (rknand_bad_nand_level)
+			snprintf(bad_nand_suffix, sizeof(bad_nand_suffix),
+				 " (bad_nand=%u)", rknand_bad_nand_level);
+
+		clk_set_rate(g_nandc_info[id].clk, target_rate);
 		g_nandc_info[id].clk_rate = clk_get_rate(g_nandc_info[id].clk);
 		clk_prepare_enable(g_nandc_info[id].clk);
 		dev_info(&pdev->dev,
-			 "rknand_probe clk rate = %d\n",
-			 g_nandc_info[id].clk_rate);
+			 "rknand_probe clk rate = %d%s\n",
+			 g_nandc_info[id].clk_rate,
+			 bad_nand_suffix);
 	}
 
 	clk_prepare_enable(g_nandc_info[id].hclk);

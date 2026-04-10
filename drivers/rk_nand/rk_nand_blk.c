@@ -38,6 +38,7 @@
 
 #include "rk_nand_blk.h"
 #include "rk_ftl_api.h"
+#include "rk_nand_base.h"
 
 static struct nand_part disk_array[MAX_PART_COUNT];
 static int g_max_part_num;
@@ -777,6 +778,8 @@ int __init rknand_dev_init(void)
 		pr_err("rk_ftl_init fail\n");
 		return -1;
 	}
+
+	rknand_apply_bad_nand_policy();
 
 	ret = nand_blk_register(&mytr);
 	if (ret) {

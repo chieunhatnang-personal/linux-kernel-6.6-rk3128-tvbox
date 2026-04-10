@@ -43,4 +43,6 @@ void wait_for_nand_flash_ready(void *nandc_reg);
 int rk_nandc_irq_init(void);
 int rk_nandc_irq_deinit(void);
 void rknand_dev_cache_flush(void);
+int rknand_bad_nand_mode_enabled(void);
+void rknand_apply_bad_nand_policy(void);
 #endif
