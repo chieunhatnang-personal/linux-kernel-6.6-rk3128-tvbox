@@ -12,10 +12,12 @@
 
 #include <linux/clk.h>
 #include <linux/module.h>
+#include <linux/mfd/syscon.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/pm.h>
 #include <linux/pm_runtime.h>
+#include <linux/regmap.h>
 #include <linux/slab.h>
 #include <linux/videodev2.h>
 #include <linux/workqueue.h>
@@ -985,6 +987,36 @@ static const struct media_device_ops hantro_m2m_media_ops = {
 	.req_queue = v4l2_m2m_request_queue,
 };
 
+static int hantro_apply_grf(struct hantro_dev *vpu)
+{
+	if (!vpu->grf)
+		return 0;
+
+	return regmap_write(vpu->grf, vpu->grf_offset, vpu->grf_value);
+}
+
+static int hantro_init_grf(struct hantro_dev *vpu)
+{
+	struct device_node *np = vpu->dev->of_node;
+	int ret;
+
+	ret = of_property_read_u32(np, "rockchip,grf-offset", &vpu->grf_offset);
+	if (ret)
+		return 0;
+
+	ret = of_property_read_u32(np, "rockchip,grf-value", &vpu->grf_value);
+	if (ret)
+		return dev_err_probe(vpu->dev, ret,
+				     "missing rockchip,grf-value property\n");
+
+	vpu->grf = syscon_regmap_lookup_by_phandle(np, "rockchip,grf");
+	if (IS_ERR(vpu->grf))
+		return dev_err_probe(vpu->dev, PTR_ERR(vpu->grf),
+				     "failed to lookup rockchip,grf\n");
+
+	return 0;
+}
+
 static int hantro_probe(struct platform_device *pdev)
 {
 	const struct of_device_id *match;
@@ -1003,6 +1035,10 @@ static int hantro_probe(struct platform_device *pdev)
 
 	match = of_match_node(of_hantro_match, pdev->dev.of_node);
 	vpu->variant = match->data;
+
+	ret = hantro_init_grf(vpu);
+	if (ret)
+		return ret;
 
 	/*
 	 * Support for nxp,imx8mq-vpu is kept for backwards compatibility
@@ -1119,6 +1155,12 @@ static int hantro_probe(struct platform_device *pdev)
 		goto err_pm_disable;
 	}
 
+	ret = hantro_apply_grf(vpu);
+	if (ret) {
+		dev_err(&pdev->dev, "Failed to apply Rockchip GRF init\n");
+		goto err_rst_assert;
+	}
+
 	ret = clk_bulk_prepare(vpu->variant->num_clocks, vpu->clocks);
 	if (ret) {
 		dev_err(&pdev->dev, "Failed to prepare clocks\n");
@@ -1206,11 +1248,17 @@ static void hantro_remove(struct platform_device *pdev)
 static int hantro_runtime_resume(struct device *dev)
 {
 	struct hantro_dev *vpu = dev_get_drvdata(dev);
+	int ret;
 
 	if (vpu->variant->runtime_resume)
-		return vpu->variant->runtime_resume(vpu);
+		ret = vpu->variant->runtime_resume(vpu);
+	else
+		ret = 0;
 
-	return 0;
+	if (ret)
+		return ret;
+
+	return hantro_apply_grf(vpu);
 }
 #endif
 

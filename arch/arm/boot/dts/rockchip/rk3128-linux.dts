@@ -251,10 +251,13 @@
 /*
  * Avoid fixed CMA address from rk312x-android.dtsi which can overlap initrd
  * (seen as bad_page during free_initrd). Let kernel place CMA dynamically.
+ *
+ * Keep the base board DTB lean for headless/server use. Larger CMA pools for
+ * video/display experiments should be enabled through an overlay instead.
  */
 &cma_region {
 	/delete-property/ reg;
-	size = <0x02000000>;
+	size = <0x01000000>;
 	alignment = <0x2000>;
 	linux,cma-default;
 };
