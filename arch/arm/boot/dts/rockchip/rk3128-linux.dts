@@ -345,6 +345,10 @@
 	status = "okay";
 };
 
+&mpp_srv {
+	status = "okay";
+};
+
 &hevc {
 	status = "okay";
 };
@@ -649,7 +653,7 @@
 };
 
 &rga {
-	status = "disabled";
+	status = "okay";
 };
 
 &saradc {
