@@ -14,10 +14,19 @@
  * For further information, see "Documentation/block/cmdline-partition.rst"
  *
  */
+#include <linux/init.h>
+#include <linux/major.h>
 #include <linux/blkdev.h>
 #include <linux/fs.h>
+#include <linux/mmc/card.h>
+#include <linux/mmc/host.h>
+#include <linux/property.h>
 #include <linux/slab.h>
 #include "check.h"
+
+#define RK_CMDLINE_TARGET		"rk29xxnand"
+#define RK_CMDLINE_HIDDEN_SECTORS	0x2000
+#define RK_CMDLINE_MIN_SECTORS		0x200000
 
 
 /* partition flags */
@@ -173,6 +182,48 @@ static void cmdline_parts_free(struct cmdline_parts **parts)
 	}
 }
 
+static int parse_named_subparts(struct cmdline_parts **parts, const char *name,
+				char *partdef)
+{
+	int ret = -EINVAL;
+	char *next;
+	struct cmdline_subpart **next_subpart;
+	struct cmdline_parts *newparts;
+
+	*parts = NULL;
+
+	newparts = kzalloc(sizeof(*newparts), GFP_KERNEL);
+	if (!newparts)
+		return -ENOMEM;
+
+	strscpy(newparts->name, name, sizeof(newparts->name));
+	newparts->nr_subparts = 0;
+	next_subpart = &newparts->subpart;
+
+	while ((next = strsep(&partdef, ","))) {
+		ret = parse_subpart(next_subpart, next);
+		if (ret)
+			goto fail;
+
+		newparts->nr_subparts++;
+		next_subpart = &(*next_subpart)->next_subpart;
+	}
+
+	if (!newparts->subpart) {
+		pr_warn("cmdline partition has no valid partition.");
+		ret = -EINVAL;
+		goto fail;
+	}
+
+	*parts = newparts;
+	return 0;
+
+fail:
+	free_subpart(newparts);
+	kfree(newparts);
+	return ret;
+}
+
 static int cmdline_parts_parse(struct cmdline_parts **parts,
 		const char *cmdline)
 {
@@ -285,6 +336,83 @@ static int __init cmdline_parts_setup(char *s)
 }
 __setup("blkdevparts=", cmdline_parts_setup);
 
+static const char *cmdline_arg_value(const char *cmdline, const char *arg)
+{
+	size_t arg_len = strlen(arg);
+	const char *match = cmdline;
+
+	while ((match = strstr(match, arg))) {
+		if (match == cmdline || match[-1] == ' ')
+			return match + arg_len;
+		match += arg_len;
+	}
+
+	return NULL;
+}
+
+static char *cmdline_arg_strdup(const char *cmdline, const char *arg)
+{
+	const char *value, *end;
+
+	value = cmdline_arg_value(cmdline, arg);
+	if (!value)
+		return NULL;
+
+	end = value;
+	while (*end && *end != ' ')
+		end++;
+
+	return kstrndup(value, end - value, GFP_KERNEL);
+}
+
+static bool rk_cmdline_partition_enabled(struct parsed_partitions *state)
+{
+	struct device *disk_dev, *card_dev, *host_dev;
+	struct mmc_card *card;
+
+	if (state->disk->major != MMC_BLOCK_MAJOR)
+		return false;
+
+	disk_dev = disk_to_dev(state->disk);
+	card_dev = disk_dev ? disk_dev->parent : NULL;
+	if (!card_dev)
+		return false;
+
+	card = container_of(card_dev, struct mmc_card, dev);
+	if (!mmc_card_mmc(card) || !card->host)
+		return false;
+
+	host_dev = card->host->parent;
+	if (!host_dev)
+		return false;
+
+	return device_property_read_bool(host_dev, "non-removable") ||
+	       device_property_read_bool(host_dev, "supports-emmc");
+}
+
+static char *rk_cmdline_partition_spec(void)
+{
+	char *mtdparts, *cursor, *entry, *parts = NULL;
+	size_t prefix_len = strlen(RK_CMDLINE_TARGET);
+
+	mtdparts = cmdline_arg_strdup(saved_command_line, "mtdparts=");
+	if (!mtdparts)
+		return NULL;
+
+	cursor = mtdparts;
+	while ((entry = strsep(&cursor, ";"))) {
+		if (strncmp(entry, RK_CMDLINE_TARGET, prefix_len) ||
+		    entry[prefix_len] != ':')
+			continue;
+
+		parts = kstrdup(entry + prefix_len + 1, GFP_KERNEL);
+		break;
+	}
+
+	kfree(mtdparts);
+	return parts;
+}
+
 static bool has_overlaps(sector_t from, sector_t size,
 			 sector_t from2, sector_t size2)
 {
@@ -341,6 +469,101 @@ static void cmdline_parts_verifier(int slot, struct parsed_partitions *state)
 	}
 }
 
+static int rk_cmdline_add_part(int slot, struct cmdline_subpart *subpart,
+			       struct parsed_partitions *state)
+{
+	struct partition_meta_info *info;
+	char tmp[sizeof(info->volname) + 4];
+
+	if (slot >= state->limit)
+		return 1;
+
+	put_partition(state, slot, subpart->from + RK_CMDLINE_HIDDEN_SECTORS,
+		      subpart->size);
+
+	info = &state->parts[slot].info;
+	strscpy(info->volname, subpart->name, sizeof(info->volname));
+	snprintf(tmp, sizeof(tmp), "(%s)", info->volname);
+	strlcat(state->pp_buf, tmp, PAGE_SIZE);
+	state->parts[slot].has_info = true;
+
+	return 0;
+}
+
+static int rk_cmdline_parts_set(struct cmdline_parts *parts, sector_t disk_size,
+				struct parsed_partitions *state)
+{
+	sector_t visible_size;
+	sector_t from = 0;
+	struct cmdline_subpart *subpart;
+	int slot = 1;
+
+	if (disk_size <= RK_CMDLINE_HIDDEN_SECTORS)
+		return slot;
+
+	visible_size = disk_size - RK_CMDLINE_HIDDEN_SECTORS;
+
+	for (subpart = parts->subpart; subpart;
+	     subpart = subpart->next_subpart, slot++) {
+		if (subpart->from == (sector_t)(~0ULL))
+			subpart->from = from;
+		else
+			from = subpart->from;
+
+		if (from >= visible_size)
+			break;
+
+		if (subpart->size == (sector_t)(~0ULL) ||
+		    subpart->size > visible_size - from)
+			subpart->size = visible_size - from;
+
+		if (rk_cmdline_add_part(slot, subpart, state))
+			break;
+
+		from += subpart->size;
+	}
+
+	return slot;
+}
+
+static int rk_cmdline_partition(struct parsed_partitions *state)
+{
+	struct cmdline_parts *parts = NULL;
+	sector_t disk_size;
+	char *partspec;
+	int ret;
+
+	if (get_capacity(state->disk) < RK_CMDLINE_MIN_SECTORS)
+		return 0;
+
+	if (!rk_cmdline_partition_enabled(state))
+		return 0;
+
+	partspec = rk_cmdline_partition_spec();
+	if (!partspec)
+		return 0;
+
+	ret = parse_named_subparts(&parts, RK_CMDLINE_TARGET, partspec);
+	kfree(partspec);
+	if (ret)
+		return -1;
+
+	disk_size = get_capacity(state->disk);
+	rk_cmdline_parts_set(parts, disk_size, state);
+	if (!state->parts[1].has_info) {
+		ret = 0;
+		goto out_free_parts;
+	}
+	cmdline_parts_verifier(1, state);
+	strlcat(state->pp_buf, "\n", PAGE_SIZE);
+	ret = 1;
+
+out_free_parts:
+	cmdline_parts_free(&parts);
+
+	return ret;
+}
+
 /*
  * Purpose: allocate cmdline partitions.
  * Returns:
@@ -365,11 +588,11 @@ int cmdline_partition(struct parsed_partitions *state)
 	}
 
 	if (!bdev_parts)
-		return 0;
+		return rk_cmdline_partition(state);
 
 	parts = cmdline_parts_find(bdev_parts, state->disk->disk_name);
 	if (!parts)
-		return 0;
+		return rk_cmdline_partition(state);
 
 	disk_size = get_capacity(state->disk) << 9;
 
