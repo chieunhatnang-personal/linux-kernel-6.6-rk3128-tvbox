@@ -31,6 +31,7 @@
 #include <linux/sched.h>
 #include <linux/freezer.h>
 #include <linux/kthread.h>
+#include <linux/err.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/version.h>
@@ -786,6 +787,7 @@ static int nand_remove_dev(struct nand_blk_dev *dev)
 
 static int nand_blk_register(struct nand_blk_ops *nand_ops)
 {
+	struct task_struct *gc_task;
 	struct nand_part part;
 	int i;
 	int ret;
@@ -824,7 +826,12 @@ static int nand_blk_register(struct nand_blk_ops *nand_ops)
 		goto rq_init_error;
 
 	INIT_LIST_HEAD(&nand_ops->devs);
-	kthread_run(nand_gc_thread, (void *)nand_ops, "rknand_gc");
+	gc_task = kthread_run(nand_gc_thread, (void *)nand_ops, "rknand_gc");
+	if (IS_ERR(gc_task)) {
+		ret = PTR_ERR(gc_task);
+		pr_err("failed to start GC thread: %d\n", ret);
+		goto rq_init_error;
+	}
 
 	g_max_part_num = nand_parse_cmdline_part(disk_array);
 	nand_ops->last_dev_index = 0;
