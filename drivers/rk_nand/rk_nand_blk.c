@@ -72,6 +72,7 @@ static unsigned long rk_ftl_gc_jiffies;
 
 static char *mtd_read_temp_buffer;
 #define MTD_RW_SECTORS (512)
+#define RKNAND_PROC_FTL_DUMP_SIZE (64 * 1024)
 
 #define DISABLE_WRITE _IO('V', 0)
 #define ENABLE_WRITE _IO('V', 1)
@@ -79,7 +80,30 @@ static char *mtd_read_temp_buffer;
 #define ENABLE_READ _IO('V', 3)
 static int rknand_proc_show(struct seq_file *m, void *v)
 {
-	m->count = rknand_proc_ftlread(m->buf);
+	char *ftl_dump;
+	int ftl_len;
+	int ret;
+
+	ftl_dump = kvzalloc(RKNAND_PROC_FTL_DUMP_SIZE, GFP_KERNEL);
+	if (!ftl_dump)
+		return -ENOMEM;
+
+	rknand_device_lock();
+	ftl_len = rknand_proc_ftlread(ftl_dump);
+	rknand_device_unlock();
+	if (ftl_len < 0) {
+		kvfree(ftl_dump);
+		return ftl_len;
+	}
+
+	if (ftl_len > RKNAND_PROC_FTL_DUMP_SIZE)
+		ftl_len = RKNAND_PROC_FTL_DUMP_SIZE;
+
+	ret = seq_write(m, ftl_dump, ftl_len);
+	kvfree(ftl_dump);
+	if (ret)
+		return ret;
+
 	seq_printf(m, "Total Read %ld KB\n", total_read_data >> 1);
 	seq_printf(m, "Total Write %ld KB\n", total_write_data >> 1);
 	seq_printf(m, "total_write_count %ld\n", total_write_count);
