@@ -777,7 +777,6 @@ static int nand_remove_dev(struct nand_blk_dev *dev)
 
 	gd = dev->blkcore_priv;
 	list_del(&dev->list);
-	gd->queue = NULL;
 	del_gendisk(gd);
 	put_disk(gd);
 	kfree(dev);
