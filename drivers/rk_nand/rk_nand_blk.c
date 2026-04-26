@@ -293,13 +293,13 @@ static blk_status_t do_blktrans_all_request(struct request *req)
 		return BLK_STS_IOERR;
 	}
 
-	if (req->cmd_flags & REQ_PREFLUSH)
-		rknand_ftl_flush_locked();
-
 	if (req_op(req) == REQ_OP_FLUSH) {
 		rknand_ftl_flush_locked();
 		return BLK_STS_OK;
 	}
+
+	if (req->cmd_flags & REQ_PREFLUSH)
+		rknand_ftl_flush_locked();
 
 	block = blk_rq_pos(req);
 	nsect = blk_rq_cur_bytes(req) >> 9;
