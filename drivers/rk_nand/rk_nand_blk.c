@@ -351,23 +351,10 @@ static blk_status_t do_blktrans_all_request(struct request *req)
 
 	switch (req_op(req)) {
 	case REQ_OP_DISCARD:
-		if (!nsect) {
-			zero_len_discard_count++;
-			if (req->cmd_flags & REQ_FUA)
-				rknand_ftl_flush_locked();
-			return BLK_STS_OK;
-		}
-		total_discard_count++;
-		ret = FtlDiscard(ftl_start, nsect);
-		if (ret) {
-			ftl_discard_error_count++;
-			rknand_log_ioerr(req, dev, "FtlDiscard failed",
-					 ftl_start, nsect, ret);
-			return BLK_STS_IOERR;
-		}
-		if (req->cmd_flags & REQ_FUA)
-			rknand_ftl_flush_locked();
-		return BLK_STS_OK;
+		ioerr_unsupported_count++;
+		rknand_log_ioerr(req, dev, "discard not advertised",
+				 ftl_start, nsect, -EOPNOTSUPP);
+		return BLK_STS_NOTSUPP;
 	case REQ_OP_READ:
 		if (!total_nsect) {
 			zero_len_read_count++;
@@ -717,8 +704,8 @@ static void rknand_init_queue(struct request_queue *rq)
 	blk_queue_max_segments(rq, MTD_RW_SECTORS);
 	/*
 	 * Keep discard hidden from filesystems while validating the old FTL
-	 * discard path.  do_blktrans_all_request() still handles unexpected
-	 * discard requests with the correct partition offset.
+	 * discard path.  Unexpected discard requests are rejected instead of
+	 * being passed to the FTL.
 	 */
 	blk_queue_max_discard_sectors(rq, 0);
 	rq->limits.discard_granularity = 0;
