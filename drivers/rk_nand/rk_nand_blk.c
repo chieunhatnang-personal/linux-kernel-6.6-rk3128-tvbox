@@ -273,6 +273,7 @@ static blk_status_t do_blktrans_all_request(struct request *req)
 {
 	struct nand_blk_dev *dev = rknand_req_to_dev(req);
 	struct gendisk *disk;
+	sector_t capacity;
 	unsigned long block, nsect, ftl_start;
 	char *buf = NULL, *page_buf;
 	struct req_iterator rq_iter;
@@ -305,8 +306,9 @@ static blk_status_t do_blktrans_all_request(struct request *req)
 	nsect = blk_rq_cur_bytes(req) >> 9;
 	total_nsect = (req->__data_len) >> 9;
 	ftl_start = block + dev->off_size;
+	capacity = get_capacity(disk);
 
-	if (blk_rq_pos(req) + blk_rq_cur_sectors(req) > get_capacity(disk)) {
+	if (total_nsect > capacity || block > capacity - total_nsect) {
 		ioerr_bounds_count++;
 		rknand_log_ioerr(req, dev, "request beyond disk capacity",
 				 ftl_start, total_nsect, -ERANGE);
