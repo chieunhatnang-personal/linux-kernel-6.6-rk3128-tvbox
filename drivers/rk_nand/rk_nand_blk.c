@@ -47,12 +47,12 @@ static int g_max_part_num;
 #define PART_WRITEONLY 0x86
 #define PART_NO_ACCESS 0x87
 
-static unsigned long totle_read_data;
-static unsigned long totle_write_data;
-static unsigned long totle_read_count;
-static unsigned long totle_write_count;
-static unsigned long totle_discard_count;
-static unsigned long totle_flush_count;
+static unsigned long total_read_data;
+static unsigned long total_write_data;
+static unsigned long total_read_count;
+static unsigned long total_write_count;
+static unsigned long total_discard_count;
+static unsigned long total_flush_count;
 static unsigned long ftl_read_error_count;
 static unsigned long ftl_write_error_count;
 static unsigned long ftl_discard_error_count;
@@ -79,12 +79,12 @@ static char *mtd_read_temp_buffer;
 static int rknand_proc_show(struct seq_file *m, void *v)
 {
 	m->count = rknand_proc_ftlread(m->buf);
-	seq_printf(m, "Totle Read %ld KB\n", totle_read_data >> 1);
-	seq_printf(m, "Totle Write %ld KB\n", totle_write_data >> 1);
-	seq_printf(m, "totle_write_count %ld\n", totle_write_count);
-	seq_printf(m, "totle_read_count %ld\n", totle_read_count);
-	seq_printf(m, "totle_discard_count %ld\n", totle_discard_count);
-	seq_printf(m, "totle_flush_count %ld\n", totle_flush_count);
+	seq_printf(m, "Total Read %ld KB\n", total_read_data >> 1);
+	seq_printf(m, "Total Write %ld KB\n", total_write_data >> 1);
+	seq_printf(m, "total_write_count %ld\n", total_write_count);
+	seq_printf(m, "total_read_count %ld\n", total_read_count);
+	seq_printf(m, "total_discard_count %ld\n", total_discard_count);
+	seq_printf(m, "total_flush_count %ld\n", total_flush_count);
 	seq_printf(m, "ftl_read_error_count %ld\n", ftl_read_error_count);
 	seq_printf(m, "ftl_write_error_count %ld\n", ftl_write_error_count);
 	seq_printf(m, "ftl_discard_error_count %ld\n", ftl_discard_error_count);
@@ -147,7 +147,7 @@ void rknand_device_unlock(void)
 
 static int rknand_ftl_flush_locked(void)
 {
-	totle_flush_count++;
+	total_flush_count++;
 	rk_ftl_cache_write_back();
 	return 0;
 }
@@ -196,8 +196,8 @@ static int nand_dev_transfer(struct nand_blk_dev *dev,
 
 	switch (cmd) {
 	case REQ_OP_READ:
-		totle_read_data += nsector;
-		totle_read_count++;
+		total_read_data += nsector;
+		total_read_count++;
 		ret = FtlRead(0, start, nsector, buf);
 		if (ret) {
 			ftl_read_error_count++;
@@ -206,8 +206,8 @@ static int nand_dev_transfer(struct nand_blk_dev *dev,
 		break;
 
 	case REQ_OP_WRITE:
-		totle_write_data += nsector;
-		totle_write_count++;
+		total_write_data += nsector;
+		total_write_count++;
 		ret = FtlWrite(0, start, nsector, buf);
 		if (ret) {
 			ftl_write_error_count++;
@@ -278,7 +278,7 @@ static blk_status_t do_blktrans_all_request(struct request *req)
 	struct req_iterator rq_iter;
 	struct bio_vec bvec;
 	int ret = BLK_STS_IOERR;
-	unsigned long totle_nsect;
+	unsigned long total_nsect;
 
 	if (!dev) {
 		ioerr_no_dev_count++;
@@ -303,13 +303,13 @@ static blk_status_t do_blktrans_all_request(struct request *req)
 
 	block = blk_rq_pos(req);
 	nsect = blk_rq_cur_bytes(req) >> 9;
-	totle_nsect = (req->__data_len) >> 9;
+	total_nsect = (req->__data_len) >> 9;
 	ftl_start = block + dev->off_size;
 
 	if (blk_rq_pos(req) + blk_rq_cur_sectors(req) > get_capacity(disk)) {
 		ioerr_bounds_count++;
 		rknand_log_ioerr(req, dev, "request beyond disk capacity",
-				 ftl_start, totle_nsect, -ERANGE);
+				 ftl_start, total_nsect, -ERANGE);
 		return BLK_STS_IOERR;
 	}
 
@@ -318,7 +318,7 @@ static blk_status_t do_blktrans_all_request(struct request *req)
 	    ((req_op(req) == REQ_OP_READ) && dev->writeonly)) {
 		ioerr_access_count++;
 		rknand_log_ioerr(req, dev, "access disabled",
-				 ftl_start, totle_nsect, -EACCES);
+				 ftl_start, total_nsect, -EACCES);
 		return BLK_STS_IOERR;
 	}
 
@@ -330,7 +330,7 @@ static blk_status_t do_blktrans_all_request(struct request *req)
 				rknand_ftl_flush_locked();
 			return BLK_STS_OK;
 		}
-		totle_discard_count++;
+		total_discard_count++;
 		ret = FtlDiscard(ftl_start, nsect);
 		if (ret) {
 			ftl_discard_error_count++;
@@ -342,13 +342,13 @@ static blk_status_t do_blktrans_all_request(struct request *req)
 			rknand_ftl_flush_locked();
 		return BLK_STS_OK;
 	case REQ_OP_READ:
-		if (!totle_nsect) {
+		if (!total_nsect) {
 			zero_len_read_count++;
 			return BLK_STS_OK;
 		}
 		buf = mtd_read_temp_buffer;
 		req_check_buffer_align(req, &buf);
-		ret = nand_dev_transfer(dev, block, totle_nsect, buf, REQ_OP_READ);
+		ret = nand_dev_transfer(dev, block, total_nsect, buf, REQ_OP_READ);
 		if (buf == mtd_read_temp_buffer) {
 			char *p = buf;
 
@@ -363,13 +363,13 @@ static blk_status_t do_blktrans_all_request(struct request *req)
 
 		if (ret) {
 			rknand_log_ioerr(req, dev, "FtlRead failed",
-					 ftl_start, totle_nsect, ret);
+					 ftl_start, total_nsect, ret);
 			return BLK_STS_IOERR;
 		}
 		else
 			return BLK_STS_OK;
 	case REQ_OP_WRITE:
-		if (!totle_nsect) {
+		if (!total_nsect) {
 			zero_len_write_count++;
 			if (req->cmd_flags & REQ_FUA)
 				rknand_ftl_flush_locked();
@@ -389,11 +389,11 @@ static blk_status_t do_blktrans_all_request(struct request *req)
 			}
 		}
 
-		ret = nand_dev_transfer(dev, block, totle_nsect, buf, REQ_OP_WRITE);
+		ret = nand_dev_transfer(dev, block, total_nsect, buf, REQ_OP_WRITE);
 
 		if (ret) {
 			rknand_log_ioerr(req, dev, "FtlWrite failed",
-					 ftl_start, totle_nsect, ret);
+					 ftl_start, total_nsect, ret);
 			return BLK_STS_IOERR;
 		}
 
@@ -405,7 +405,7 @@ static blk_status_t do_blktrans_all_request(struct request *req)
 	default:
 		ioerr_unsupported_count++;
 		rknand_log_ioerr(req, dev, "unsupported request op",
-				 ftl_start, totle_nsect, -EOPNOTSUPP);
+				 ftl_start, total_nsect, -EOPNOTSUPP);
 		return BLK_STS_IOERR;
 	}
 }
