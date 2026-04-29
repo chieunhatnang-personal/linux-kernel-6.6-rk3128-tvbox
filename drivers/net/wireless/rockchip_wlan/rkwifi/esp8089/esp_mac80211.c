@@ -2192,7 +2192,8 @@ esp_pub_init_mac80211(struct esp_pub *epub)
 	ieee80211_hw_set(hw, SIGNAL_DBM);
 	ieee80211_hw_set(hw, HAS_RATE_CONTROL);	
 	ieee80211_hw_set(hw, SUPPORTS_PS);
-	ieee80211_hw_set(hw, AMPDU_AGGREGATION);
+	if (!mod_support_no_txampdu() || !mod_support_no_rxampdu())
+		ieee80211_hw_set(hw, AMPDU_AGGREGATION);
 	ieee80211_hw_set(hw, HOST_BROADCAST_PS_BUFFERING);
 #else
         hw->flags = IEEE80211_HW_SIGNAL_DBM |
@@ -2203,7 +2204,8 @@ esp_pub_init_mac80211(struct esp_pub *epub)
                     IEEE80211_HW_SUPPORTS_PS |
 #endif
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 29))
-                IEEE80211_HW_AMPDU_AGGREGATION |
+                ((!mod_support_no_txampdu() || !mod_support_no_rxampdu()) ?
+                 IEEE80211_HW_AMPDU_AGGREGATION : 0) |
 #endif
 				IEEE80211_HW_HOST_BROADCAST_PS_BUFFERING;
 #endif /*Linux 4.2.0*/
@@ -2255,30 +2257,39 @@ esp_pub_init_mac80211(struct esp_pub *epub)
         epub->wl.sbands[IEEE80211_BAND_2GHZ].bitrates = esp_rates_2ghz;
         epub->wl.sbands[IEEE80211_BAND_2GHZ].n_channels = ARRAY_SIZE(esp_channels_2ghz);
         epub->wl.sbands[IEEE80211_BAND_2GHZ].n_bitrates = ARRAY_SIZE(esp_rates_2ghz);
-        /*add to support 11n*/
+        /* Keep HT enabled, but advertise only conservative HT20 long-GI rates. */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 29))
+        memset(&epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_cap, 0,
+               sizeof(epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_cap));
+        if (!mod_support_disable_ht()) {
         epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_cap.ht_supported = true;
-        epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_cap.cap = 0x116C;//IEEE80211_HT_CAP_RX_STBC; //IEEE80211_HT_CAP_SGI_20;
+        epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_cap.cap = 0;
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 32))
-        epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_cap.ampdu_factor = IEEE80211_HT_MAX_AMPDU_16K;
+        epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_cap.ampdu_factor = IEEE80211_HT_MAX_AMPDU_8K;
         epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_cap.ampdu_density = IEEE80211_HT_MPDU_DENSITY_NONE;
 #else
-        epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_cap.ampdu_factor = 1;//IEEE80211_HT_MAX_AMPDU_16K;
+        epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_cap.ampdu_factor = 0;
         epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_cap.ampdu_density = 0;//IEEE80211_HT_MPDU_DENSITY_NONE;
 #endif
         memset(&epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_cap.mcs, 0,
                sizeof(epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_cap.mcs));
-        epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_cap.mcs.rx_mask[0] = 0xff;
+        epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_cap.mcs.rx_mask[0] = mod_support_ht_mcs_mask();
+        epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_cap.mcs.tx_params = IEEE80211_HT_MCS_TX_DEFINED;
         //epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_cap.mcs.rx_highest = 7;
         //epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_cap.mcs.tx_params = IEEE80211_HT_MCS_TX_DEFINED;
+        }
 #else
+        memset(&epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_info, 0,
+               sizeof(epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_info));
+        if (!mod_support_disable_ht()) {
         epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_info.ht_supported = true;
-        epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_info.cap = 0x116C;//IEEE80211_HT_CAP_RX_STBC; //IEEE80211_HT_CAP_SGI_20;
-        epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_info.ampdu_factor = 1;//IEEE80211_HT_MAX_AMPDU_16K;
+        epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_info.cap = 0;
+        epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_info.ampdu_factor = 0;
         epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_info.ampdu_density = 0;//IEEE80211_HT_MPDU_DENSITY_NONE;
         memset(&epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_info.supp_mcs_set, 0,
                sizeof(epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_info.supp_mcs_set));
-        epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_info.supp_mcs_set[0] = 0xff;
+        epub->wl.sbands[IEEE80211_BAND_2GHZ].ht_info.supp_mcs_set[0] = mod_support_ht_mcs_mask();
+        }
 #endif
 
 

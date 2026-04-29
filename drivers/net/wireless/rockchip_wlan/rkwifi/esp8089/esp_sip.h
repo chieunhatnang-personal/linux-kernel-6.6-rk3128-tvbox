@@ -165,6 +165,10 @@ bool mod_support_no_txampdu(void);
 
 bool mod_support_no_rxampdu(void);
 
+bool mod_support_disable_ht(void);
+
+u8 mod_support_ht_mcs_mask(void);
+
 void mod_support_no_txampdu_set(bool value);
 
 #ifdef FPGA_DEBUG

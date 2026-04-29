@@ -45,7 +45,11 @@ static int /*__init*/ esp_sdio_init(void);
 static void  /*__exit*/ esp_sdio_exit(void);
 
 
-#define ESP_DMA_IBUFSZ   2048
+/*
+ * The SDIO core may need a temporary aligned bounce buffer for full SIP
+ * transactions, not just small control frames.
+ */
+#define ESP_DMA_IBUFSZ   SIP_PKT_MAX_LEN
 
 //unsigned int esp_msg_level = 0;
 unsigned int esp_msg_level = ESP_DBG_ERROR | ESP_SHOW;
@@ -140,6 +144,12 @@ int sif_io_raw(struct esp_pub *epub, u32 addr, u8 *buf, u32 len, u32 flag)
 
         if (bad_buf(buf)) {
                 esp_dbg(ESP_DBG_TRACE, "%s dst 0x%08x, len %d badbuf\n", __func__, addr, len);
+                if (len > ESP_DMA_IBUFSZ) {
+                        esp_dbg(ESP_DBG_ERROR, "%s len %u exceeds dma bounce buffer %u\n",
+                                __func__, len, ESP_DMA_IBUFSZ);
+                        err = -EMSGSIZE;
+                        goto _exit;
+                }
                 need_ibuf = true;
                 ibuf = sctrl->dma_buffer;
         } else {
@@ -202,6 +212,12 @@ int sif_io_sync(struct esp_pub *epub, u32 addr, u8 *buf, u32 len, u32 flag)
 
         if (bad_buf(buf)) {
                 esp_dbg(ESP_DBG_TRACE, "%s dst 0x%08x, len %d badbuf\n", __func__, addr, len);
+                if (len > ESP_DMA_IBUFSZ) {
+                        esp_dbg(ESP_DBG_ERROR, "%s len %u exceeds dma bounce buffer %u\n",
+                                __func__, len, ESP_DMA_IBUFSZ);
+                        err = -EMSGSIZE;
+                        goto _exit;
+                }
                 need_ibuf = true;
                 ibuf = sctrl->dma_buffer;
         } else {
